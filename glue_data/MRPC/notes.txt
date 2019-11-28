@@ -1,7 +1,11 @@
 this dataset is about binary classification task whether two sentences are paraphrase of each other or not.
 
 it seems that MRPC is relatively a small dataset where train.tsv (trainig dataset) only has about 4k pair of positive examples of paraphrasing,
-test.tsv (test dataset) has 1.6k sentence paris and dev.tsv has .4k examples.
+test.tsv (test dataset) has 1.6k sentence paris and dev.tsv has .4k examples. The glue transformer benchmark only uses train.tsv and dev.tsv and not
+test.tsv. It is becuase test.tsv does not contains labeles. In bothe, train.tsv and dev.tsv, the first field is called quality that could be either 0
+or 1 where 0 refers to a negative pair and 1 refers to a positive pair
 
 it seems that msr_paraphrase_test.txt is a post-processed cleaned version of test.tsv and similarly msr_paraphrase_train.txt is a post-processed cleaned
 version of train.tsv
+
+
