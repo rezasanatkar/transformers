@@ -1,0 +1,7 @@
+this dataset is about binary classification task whether two sentences are paraphrase of each other or not.
+
+it seems that MRPC is relatively a small dataset where train.tsv (trainig dataset) only has about 4k pair of positive examples of paraphrasing,
+test.tsv (test dataset) has 1.6k sentence paris and dev.tsv has .4k examples.
+
+it seems that msr_paraphrase_test.txt is a post-processed cleaned version of test.tsv and similarly msr_paraphrase_train.txt is a post-processed cleaned
+version of train.tsv
