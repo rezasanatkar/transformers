@@ -14,4 +14,4 @@ python ./examples/run_glue.py \
     --per_gpu_train_batch_size=8   \
     --learning_rate 2e-5 \
     --num_train_epochs 3.0 \
-    --output_dir /tmp/$TASK_NAME/
+    --output_dir results/$TASK_NAME/
