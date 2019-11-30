@@ -153,8 +153,11 @@ def glue_convert_examples_to_features(examples, tokenizer,
 
 class MrpcProcessor(DataProcessor):
     """Processor for the MRPC data set (GLUE version)."""
-
+    #DataProcessor is an abstract class defined in utils.py in the same folder 
+    
     def get_example_from_tensor_dict(self, tensor_dict):
+        #this fn helps us to interact with the tensorflow dataset that represent each train/test example as the following using a python dictionary
+        #with the following keys and values are tensorflow tensors
         """See base class."""
         return InputExample(tensor_dict['idx'].numpy(),
                             tensor_dict['sentence1'].numpy().decode('utf-8'),
@@ -167,14 +170,22 @@ class MrpcProcessor(DataProcessor):
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
+    #as you can see the assumption of this class is that the training dataset is called train.tsv.
+
+
     def get_dev_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
 
+    #both, get_train_examples and get_test_examples will return  list of InputExample 
+
     def get_labels(self):
         """See base class."""
         return ["0", "1"]
+
+    #as we saw in utils.py, the labels in GLUE dataset are assumed to be strings as well like here that "0" refers to those cases that two sentences
+    #are not paraphrase of each other and "1" refers to thoses cases that two sentences are paraphrase of each other
 
     def _create_examples(self, lines, set_type):
         """Creates examples for the training and dev sets."""
@@ -182,12 +193,20 @@ class MrpcProcessor(DataProcessor):
         for (i, line) in enumerate(lines):
             if i == 0:
                 continue
+            #in above, the assumption is that the first line of GLUE datasets is the header so we should ignore it. 
             guid = "%s-%s" % (set_type, i)
+            #guid is supposed to be the unique id of this example which is constructed as a form of train-11 where train determine that this is
+            #a train example and 11 is the unique id of this example
+            
             text_a = line[3]
+            #the assumption is that in the tsv file corresponding to this dataset, the third field in each line contains the first sentence
             text_b = line[4]
+            #and the second sentence is the fourth field
             label = line[0]
+            #label is assumed to be first filed of each tsv file
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+            #finally, examples will be a list of InputExamples
         return examples
 
 

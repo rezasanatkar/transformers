@@ -20,6 +20,10 @@ import copy
 import json
 
 class InputExample(object):
+    #every train, dev and test example must be an object of this class. GLUE tasks are about either single sentence classification or
+    #pair sentence classification. each InputExample has 4 data fields. guid is the unique id of this example in the dataset. text_a is the first sentece
+    #that must be untokenized and text_b (only for datasets with sentece pairs) is the seocond sentece untokenized. the label field is also a string
+    #field that represents the label of this example and is provided for the examples in train and dev dataset but not for the examples in test dataset
     """
     A single training/test example for simple sequence classification.
 
@@ -32,6 +36,8 @@ class InputExample(object):
         label: (Optional) string. The label of the example. This should be
         specified for train and dev examples, but not for test examples.
     """
+
+    
     def __init__(self, guid, text_a, text_b=None, label=None):
         self.guid = guid
         self.text_a = text_a
@@ -44,9 +50,13 @@ class InputExample(object):
     def to_dict(self):
         """Serializes this instance to a Python dictionary."""
         output = copy.deepcopy(self.__dict__)
+        #in above, __dict__ is very interseting and works for any class(object) in python and returns the fields members of the objects as a python
+        #dictionary. We need to de deepcopy before returnning this python dictionary since it will be by reference and will give the option to the caller
+        #to modify the fields of this class
         return output
 
     def to_json_string(self):
+        #this method serialize (convert to string) the python dictionary that represents the fields of this object
         """Serializes this instance to a JSON string."""
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
@@ -114,6 +124,8 @@ class DataProcessor(object):
             example.label = self.get_labels()[int(example.label)]
         return example
 
+
+    #_read_tsv reads a tsv file and returns as list of list where each list are the entries in each line
     @classmethod
     def _read_tsv(cls, input_file, quotechar=None):
         """Reads a tab separated value file."""

@@ -58,6 +58,10 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 from transformers import glue_compute_metrics as compute_metrics
 from transformers import glue_output_modes as output_modes
 from transformers import glue_processors as processors
+#glue_processors is defined at transformers/data/processors/glue.py
+#glue_processors is a python dict with string key name of taks and values being processor classes that are able to read the train and dev datasets of
+#those tasks and restun python lists of train and dev InputExample 
+
 from transformers import glue_convert_examples_to_features as convert_examples_to_features
 
 logger = logging.getLogger(__name__)
@@ -336,10 +340,41 @@ def main():
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
+    #all the MODEL_CLASSES are the versions of sequence encoder for sequenceClassification like BertForSequenceClassification
+    #note you might have several models with a same model_type for example, for the model type BertForSequenceClassification, you can have several
+    #different variance of BERT like the base one with smaller number of layers possibly and the large one with the larger numebr of layers.
+
+    #{'bert': (<class 'transformers.configuration_bert.BertConfig'>, <class 'transformers.modeling_bert.BertForSequenceClassification'>, <class 'transformers.tokenization_bert.BertTokenizer'>),
+
+    #'xlnet': (<class 'transformers.configuration_xlnet.XLNetConfig'>, <class 'transformers.modeling_xlnet.XLNetForSequenceClassification'>, <class 'transformers.tokenization_xlnet.XLNetTokenizer'>),
+
+    #'xlm': (<class 'transformers.configuration_xlm.XLMConfig'>, <class 'transformers.modeling_xlm.XLMForSequenceClassification'>, <class 'transformers.tokenization_xlm.XLMTokenizer'>),
+
+    #'roberta': (<class 'transformers.configuration_roberta.RobertaConfig'>, <class 'transformers.modeling_roberta.RobertaForSequenceClassification'>, <class 'transformers.tokenization_roberta.RobertaTokenizer'>),
+
+    #'distilbert': (<class 'transformers.configuration_distilbert.DistilBertConfig'>, <class 'transformers.modeling_distilbert.DistilBertForSequenceClassification'>, <class 'transformers.tokenization_distilbert.DistilBertTokenizer'>),
+
+    #'albert': (<class 'transformers.configuration_albert.AlbertConfig'>, <class 'transformers.modeling_albert.AlbertForSequenceClassification'>, <class 'transformers.tokenization_albert.AlbertTokenizer'>)}
+    
+    #in particaulr, the below model_name_or_path defines what variant of the model_type you want to use. For example, if you choose the model_type to be
+    #bert, its variant could be one of the followings: 'bert-base-uncased', 'bert-large-uncased', 'bert-base-cased', 'bert-large-cased', 'bert-base-multilingual-uncased', 'bert-base-multilingual-cased', 'bert-base-chinese', 'bert-base-german-cased', 'bert-large-uncased-whole-word-masking', 'bert-large-cased-whole-word-masking', 'bert-large-uncased-whole-word-masking-finetuned-squad', 'bert-large-cased-whole-word-masking-finetuned-squad', 'bert-base-cased-finetuned-mrpc', 'bert-base-german-dbmdz-cased', 'bert-base-german-dbmdz-uncased'
+
+    #for the other model_types, you have the following variants:
+
+    #( 'xlnet-base-cased', 'xlnet-large-cased', 'xlm-mlm-en-2048', 'xlm-mlm-ende-1024', 'xlm-mlm-enfr-1024', 'xlm-mlm-enro-1024', 'xlm-mlm-tlm-xnli15-1024', 'xlm-mlm-xnli15-1024', 'xlm-clm-enfr-1024', 'xlm-clm-ende-1024', 'xlm-mlm-17-1280', 'xlm-mlm-100-1280', 'roberta-base', 'roberta-large', 'roberta-large-mnli', 'distilroberta-base', 'roberta-base-openai-detector', 'roberta-large-openai-detector', 'distilbert-base-uncased', 'distilbert-base-uncased-distilled-squad', 'distilbert-base-multilingual-cased')
+    
     parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
                         help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
+
     parser.add_argument("--task_name", default=None, type=str, required=True,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
+    #task_name must be one of the 9 taks of GLUE:
+    #['cola', 'mnli', 'mnli-mm', 'mrpc', 'sst-2', 'sts-b', 'qqp', 'qnli', 'rte', 'wnli']
+    #in particular, processors is glue_processors
+
+    #processors is a dict of string key name of tasks to their processor classes that read train and dev datasets and retutn python lists of train and
+    #test InputExamples
+    
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
@@ -348,64 +383,133 @@ def main():
                         help="Pretrained config name or path if not the same as model_name")
     parser.add_argument("--tokenizer_name", default="", type=str,
                         help="Pretrained tokenizer name or path if not the same as model_name")
+    #in transformer example, the two above options were not used which means that if you follow the standard steps, you don't need to be worries about
+    #these two options
+    
     parser.add_argument("--cache_dir", default="", type=str,
                         help="Where do you want to store the pre-trained models downloaded from s3")
+    #cache_dir is not used in the transformer glue example as well
+    
     parser.add_argument("--max_seq_length", default=128, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
+    #max_seq_length is probably one of the most important options of this script. When training encoders as languge models, you know that all the sequence
+    #examples have same lenght of the context window since the text corpus is huge. However, for sequence classification taks, each sentence could have
+    #different lenght and the question is that how to deal with differenec sequence lenghts in a single minibatch. In tensorflow, the way that the sequnce
+    #with different lenghts are addressed by considering the length of each sequence therefore, to start propagating the gradients from the sequnce lenght
+    #to the start of sequnce and also use the hidden state corresponding to the sequnce lenght as the basis for classification task.
+
+    #however, here, it seems that they don't care about the lenght of the sequence. For example, if a sequnce is longer than max_sequence_lenght, it will
+    #be truncated and if it shorter than max_seq_lenght, it will be padded by a special token
+
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
+    #very simple, do you want to train the model (fine-tune for the NLU task?
+    
     parser.add_argument("--do_eval", action='store_true',
                         help="Whether to run eval on the dev set.")
+    #do you want to run the evaluation over the dev dataset (not test dataset)?
+    
     parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Rul evaluation during training at each logging step.")
+    #this is the option that will be useful if you want to run evaluation job over dev dataset at each time that you save the checkpoint of the model being
+    #trained
+    
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
+    #for almost all the encoders, you can find two versions: one that is trained on cased sentences which means that sentences have both lower case and
+    #upper case letters, and uncased once which means that all the letters are being lower cased before training the model. Therefore, if the model that
+    #you are using an encoder that has trained on uncased sentences (all the sentences being lower cased), then you need to specify it here
 
     parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for training.")
+    #this is an important feature in the case if you get out of memory runtime error while running training jobs
+    
     parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
+    #the same batch_size for evaluations jobs
+    
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")     
+                        help="Number of updates steps to accumulate before performing a backward/update pass.")
+    #I don't think this is relevant option for transformers since they don't have any recurrent structures and therefore there is no notion of
+    #backpropagation of gradients over time. transformer GLUE job doesn't specify this, therefore, the default value of 1 will be used
+    
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
+    #it seems that the only option for optimizer is Adam. The learning rate for GLUE transformer task is set to be 2e-5
+    
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight deay if we apply some.")
+    #the weight decay is not used for transformer GLUE job which means that weight_decay is equal to 0
+    
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
+    #this is not set for GLUE transformer task as well
+    
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
+    #this is not set as well which means that the max_grad_norm is 1.0
+    
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
+    #this is set to be 3 which means that we only perform 3 epochs of training over NLU tasks
+    
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
+
+    
     parser.add_argument("--warmup_steps", default=0, type=int,
                         help="Linear warmup over warmup_steps.")
+    #this is not set in transformer GLUE task which means that there is no linear warmup. If this parameter is set, it determines the numeber of steps
+    #(in terms of number of minibatches) over which the learning_rate will be increaseed from 0 to the nominal value for the learning rate
 
     parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
+    #this means to log every 50 minibatches being processed
+    
     parser.add_argument('--save_steps', type=int, default=50,
                         help="Save checkpoint every X updates steps.")
+    #this means which how many minibatches interval to save the checkpoints for weights
+    
     parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
+    #this specifies whether we want to evaluate each saved checkpoint or not
+    
+    
     parser.add_argument("--no_cuda", action='store_true',
                         help="Avoid using CUDA when available")
+    #why to not use cuda?
+    
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
+    #do you want to overwrite the content of output directory?
+    
     parser.add_argument('--overwrite_cache', action='store_true',
                         help="Overwrite the cached training and evaluation sets")
+    #do you want to overwrite the cached training and evaluation sets?
+    
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
+    #what is the random seed for initilization?
 
     parser.add_argument('--fp16', action='store_true',
                         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit")
+    #whether to use fp16 for mixed precision operation to speed up training?
+
+    
     parser.add_argument('--fp16_opt_level', type=str, default='O1',
                         help="For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
                              "See details at https://nvidia.github.io/apex/amp.html")
+    
+
+    
     parser.add_argument("--local_rank", type=int, default=-1,
                         help="For distributed training: local_rank")
+    #this is interesting since it specifies the rank of this worker in distributed training schema
+    
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
+    
+    
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
     args = parser.parse_args()
 
@@ -419,10 +523,14 @@ def main():
         print("Waiting for debugger attach")
         ptvsd.enable_attach(address=(args.server_ip, args.server_port), redirect_output=True)
         ptvsd.wait_for_attach()
+    #we usually don't use server debugging
 
+    
     # Setup CUDA, GPU & distributed training
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda:0" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+        #in above, I changed "cuda" to "cuda:0"
+        #in above, if we are asked no_cuda, then device will be "cpu", otherwise if gpu is avaiable, it will be "cuda:0"
         args.n_gpu = torch.cuda.device_count()
     else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.cuda.set_device(args.local_rank)
