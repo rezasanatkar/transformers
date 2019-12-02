@@ -45,11 +45,13 @@ except ImportError:
 try:
     from torch.hub import _get_torch_home
     torch_cache_home = _get_torch_home()
+    # torche_cache_home is equal to /Users/msanatkar/.cache/torch
 except ImportError:
     torch_cache_home = os.path.expanduser(
         os.getenv('TORCH_HOME', os.path.join(
             os.getenv('XDG_CACHE_HOME', '~/.cache'), 'torch')))
 default_cache_path = os.path.join(torch_cache_home, 'transformers')
+#default_cache_path is equal to /Users/msanatkar/.cache/torch/transformers
 
 try:
     from urllib.parse import urlparse
@@ -60,10 +62,14 @@ try:
     from pathlib import Path
     PYTORCH_PRETRAINED_BERT_CACHE = Path(
         os.getenv('PYTORCH_TRANSFORMERS_CACHE', os.getenv('PYTORCH_PRETRAINED_BERT_CACHE', default_cache_path)))
+    #default_cache_path is /Users/msanatkar/.cache/torch/transformers which will be PYTORCH_PRETRAINED_BERT_CACHE as well since the
+    #environemnt variables PYTORCH_TRANSFORMERS_CACHE and PYTORCH_PRETRAINED_BERT_CACH do not exist
+
 except (AttributeError, ImportError):
     PYTORCH_PRETRAINED_BERT_CACHE = os.getenv('PYTORCH_TRANSFORMERS_CACHE',
                                               os.getenv('PYTORCH_PRETRAINED_BERT_CACHE',
                                                         default_cache_path))
+
 
 PYTORCH_TRANSFORMERS_CACHE = PYTORCH_PRETRAINED_BERT_CACHE  # Kept for backward compatibility
 TRANSFORMERS_CACHE = PYTORCH_PRETRAINED_BERT_CACHE  # Kept for backward compatibility
@@ -104,6 +110,10 @@ else:
         return docstring_decorator
 
 def url_to_filename(url, etag=None):
+    #url for bert-base-uncased is https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-config.json
+    #and its etag that represents the version of this resource is the following:
+    #74d4f96fdabdd865cbdbe905cd46c1f1
+    
     """
     Convert `url` into a hashed filename in a repeatable way.
     If `etag` is specified, append its hash to the url's, delimited
@@ -112,17 +122,25 @@ def url_to_filename(url, etag=None):
     so that TF 2.0 can identify it as a HDF5 file
     (see https://github.com/tensorflow/tensorflow/blob/00fad90125b18b80fe054de1055770cfb8fe4ba3/tensorflow/python/keras/engine/network.py#L1380)
     """
+    #url is a string
     url_bytes = url.encode('utf-8')
+    #.encode('utf-8') ecnode the url string into utf-8 encoding where the type of url_bytes is bytes and not str anymore
     url_hash = sha256(url_bytes)
+    #url_hash will be a hash object and .hexdigest() returns a str that represent the str of the hashcode in hexadecimal
     filename = url_hash.hexdigest()
 
     if etag:
+        #etag which is the veriosn of this model json config file from s2 Amazon for bert-base-uncased is the following:
+        #74d4f96fdabdd865cbdbe905cd46c1f1
         etag_bytes = etag.encode('utf-8')
         etag_hash = sha256(etag_bytes)
         filename += '.' + etag_hash.hexdigest()
+        #wow, interesting. filename will be the hashcode corresponding to the url path of the json config file appended by the hashcode of the etag version
+        #of the json config file
 
     if url.endswith('.h5'):
         filename += '.h5'
+        #for bert-base-uncased, it doesn't
 
     return filename
 
@@ -154,6 +172,9 @@ def filename_to_url(filename, cache_dir=None):
 
 
 def cached_path(url_or_filename, cache_dir=None, force_download=False, proxies=None, resume_download=False):
+    #for most of the pretrained model like BERT url_or_filename is a url path to the json config file of the pretrained model that contains the
+    #architectural information about the model. cache_dir is not provided so that this method will back off to the default cache path which is equal to
+    #/Users/msanatkar/.cache/torch/transformers. 
     """
     Given something that might be a URL (or might be a local path),
     determine which. If it's a URL, download the file and cache it, and
@@ -164,20 +185,31 @@ def cached_path(url_or_filename, cache_dir=None, force_download=False, proxies=N
         force_download: if True, re-dowload the file even if it's already cached in the cache dir.
         resume_download: if True, resume the download if incompletly recieved file is found.
     """
+    #for most casess of pretrained models, cache_dir is None
     if cache_dir is None:
         cache_dir = TRANSFORMERS_CACHE
+        #cache_dir is equal to /Users/msanatkar/.cache/torch/transformers
     if sys.version_info[0] == 3 and isinstance(url_or_filename, Path):
         url_or_filename = str(url_or_filename)
+        #this one is not satisfied since url_or_filename for existing pretrained models is a url path and not a Path
     if sys.version_info[0] == 3 and isinstance(cache_dir, Path):
+        #sys.version_info returns the Python version
         cache_dir = str(cache_dir)
 
+    #for bert-base-uncased, url_or_filename = https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-config.json
     parsed = urlparse(url_or_filename)
+    #the parsed verion of the above url path is the following:
+    #ParseResult(scheme='https', netloc='s3.amazonaws.com', path='/models.huggingface.co/bert/bert-base-uncased-config.json', params='', query='',
+    #fragment='')
 
     if parsed.scheme in ('http', 'https', 's3'):
         # URL, so get it from the cache (downloading if necessary)
+
+        #for most of the pretrained encoders, url_or_filename is a url path and they will hit this if condition 
         return get_from_cache(url_or_filename, cache_dir=cache_dir,
             force_download=force_download, proxies=proxies,
             resume_download=resume_download)
+    
     elif os.path.exists(url_or_filename):
         # File, and it exists.
         return url_or_filename
@@ -254,39 +286,60 @@ def http_get(url, temp_file, proxies=None, resume_size=0):
 
 
 def get_from_cache(url, cache_dir=None, force_download=False, proxies=None, etag_timeout=10, resume_download=False):
+    #for bert-based-uncased, url is https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-config.json
+    #also, cache_dir is the following: /Users/msanatkar/.cache/torch/transformers
+    
     """
     Given a URL, look for the corresponding dataset in the local cache.
     If it's not there, download it. Then return the path to the cached file.
     """
     if cache_dir is None:
         cache_dir = TRANSFORMERS_CACHE
+        #TRANSFORMERS_CACHE is equal to /Users/msanatkar/.cache/torch/transformers
     if sys.version_info[0] == 3 and isinstance(cache_dir, Path):
         cache_dir = str(cache_dir)
+        #sys.version_info[0] returns the Python version
     if sys.version_info[0] == 2 and not isinstance(cache_dir, str):
         cache_dir = str(cache_dir)
 
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
+    #cache_dir is equal to /Users/msanatkar/.cache/torch/transformers
 
     # Get eTag to add to filename, if it exists.
     if url.startswith("s3://"):
+        #url for BERT starts with https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-config.json so it doesn't satisfy this of condition
         etag = s3_etag(url, proxies=proxies)
     else:
         try:
             response = requests.head(url, allow_redirects=True, proxies=proxies, timeout=etag_timeout)
+            #head method make a head request to a webpage and returns the HTTP header
             if response.status_code != 200:
+                #response code 200 refers to an OK response and no error
                 etag = None
             else:
                 etag = response.headers.get("ETag")
+                #The ETag HTTP response header is an identifier for a specific version of a resource. It lets caches be more efficient and save bandwidth,
+                #as a web server does not need to resend a full response if the content has not changed
+                #ETage for bert-base-uncased is 74d4f96fdabdd865cbdbe905cd46c1f1
         except (EnvironmentError, requests.exceptions.Timeout):
             etag = None
 
     if sys.version_info[0] == 2 and etag is not None:
         etag = etag.decode('utf-8')
+        
     filename = url_to_filename(url, etag)
+    #etag for bert-base-uncased is 74d4f96fdabdd865cbdbe905cd46c1f1 and url is the following:
+    #https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-config.json
+
+    #filaname will be a str that is concatenation of the hashcode of the urlpath and the hashcode of the etag str
 
     # get cache path to put the file
     cache_path = os.path.join(cache_dir, filename)
+    #cache_dir is equal to /Users/msanatkar/.cache/torch/transformers
+
+    #cache_path for bert-base-uncased is the following:
+    #/Users/msanatkar/.cache/torch/transformers/4dad0251492946e18ac39290fcfe91b89d370fee250efe9521476438fe8ca185.bf3b9ea126d8c0001ee8a1e8b92229871d06d36d8808208cc2449280da87785c
 
     # If we don't have a connection (etag is None) and can't identify the file
     # try to get the last downloaded one

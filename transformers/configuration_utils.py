@@ -67,6 +67,7 @@ class PretrainedConfig(object):
 
         # If we save using the predefined names, we can load using `from_pretrained`
         output_config_file = os.path.join(save_directory, CONFIG_NAME)
+        #inside file_utils.py, CONFIG_NAME is set to be config.json
 
         self.to_json_file(output_config_file)
         logger.info("Configuration saved in {}".format(output_config_file))
@@ -122,21 +123,48 @@ class PretrainedConfig(object):
 
         """
         cache_dir = kwargs.pop('cache_dir', None)
+        #you need to specify cache_dir if you want to force this module to not cache the downloaded config file into the default cache path but a different
+        #path. The default cache path is /Users/msanatkar/.cache/torch/transformers
+        
         force_download = kwargs.pop('force_download', False)
+        #it forces to redownload the weights and configuration file of a model even if they already exists in cache
+        
         resume_download = kwargs.pop('resume_download', False)
+        
         proxies = kwargs.pop('proxies', None)
+        #if you need proxies to get connected to the Internet
+        
         return_unused_kwargs = kwargs.pop('return_unused_kwargs', False)
 
+        #in the case of bert-based-uncased, pretrained_model_name_or_path is equal to bert-base-uncased. 
         if pretrained_model_name_or_path in cls.pretrained_config_archive_map:
+            #cls.pretrained_config_archive_map is specified by the derived classes and it is a python dictionary that maps the existing model names like
+            #bert-base-uncased to the url path of their corresponding config files. So, therefore, here, we want to check if the passed string to
+            #this method as the pretrained_model_name_or_path is actually a model name like bert-base-uncased or it is a path to a potentially a local
+            #json config file
+            
             config_file = cls.pretrained_config_archive_map[pretrained_model_name_or_path]
+            #here, the above config_file will be a url path to a file on Amazon S3
+            
         elif os.path.isdir(pretrained_model_name_or_path):
+            #here, we check if passed string is in fact, a path to a directory that contains the local config file
             config_file = os.path.join(pretrained_model_name_or_path, CONFIG_NAME)
+            #in file_utils.py, CONFIG_NAME is set to be config.json
+            
         else:
             config_file = pretrained_model_name_or_path
+            #here, the assumption is that the pretrained_model_name_or_path is actually the path to file config file
+
+            
         # redirect to the cache, if necessary
         try:
             resolved_config_file = cached_path(config_file, cache_dir=cache_dir, force_download=force_download,
                                                proxies=proxies, resume_download=resume_download)
+            #in above, we ususally want to use the default cache path. Therefore, we don't specify the cache_dir
+            #the method cahced_path is defined at file_utils.py
+
+            #for most of the pretrained encoder models, the config_file is a url path to a json config file in Amazon s3 that contains the architecture
+            #information of the pretrained model like BERT
         except EnvironmentError:
             if pretrained_model_name_or_path in cls.pretrained_config_archive_map:
                 msg = "Couldn't reach server at '{}' to download pretrained model configuration file.".format(

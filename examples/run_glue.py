@@ -57,10 +57,26 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 
 from transformers import glue_compute_metrics as compute_metrics
 from transformers import glue_output_modes as output_modes
+#glue_output_modes is defined at transformers/data/processors/glue.py and is the following:
+#glue_output_modes = {
+#    "cola": "classification",
+#    "mnli": "classification",
+#    "mnli-mm": "classification",
+#    "mrpc": "classification",
+#    "sst-2": "classification",
+#    "sts-b": "regression",
+#    "qqp": "classification",
+#    "qnli": "classification",
+#    "rte": "classification",
+#    "wnli": "classification",
+#}
+
+
 from transformers import glue_processors as processors
 #glue_processors is defined at transformers/data/processors/glue.py
 #glue_processors is a python dict with string key name of taks and values being processor classes that are able to read the train and dev datasets of
-#those tasks and restun python lists of train and dev InputExample 
+#those tasks and restun python lists of train and dev InputExample
+
 
 from transformers import glue_convert_examples_to_features as convert_examples_to_features
 
@@ -531,7 +547,12 @@ def main():
         device = torch.device("cuda:0" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         #in above, I changed "cuda" to "cuda:0"
         #in above, if we are asked no_cuda, then device will be "cpu", otherwise if gpu is avaiable, it will be "cuda:0"
+        #the glue standard script will trigger this option which happens because we don't specifiy local_rank option.
+        #in general, if you don't set local_rank, you are asking this script to use DataParallel to do distributed trainig which is a single-machine,
+        #multi-gpu distributed training and if you set the local_rank, then you are asking from torch to use DistributedDataParallel which is
+        #multi-machine, multi-gpu distributed training. setting "cuda:0" is totally fine and still DataParallel uses both GPUs to run the trainig job
         args.n_gpu = torch.cuda.device_count()
+        #args.n_gpu will be 2
     else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.cuda.set_device(args.local_rank)
         device = torch.device("cuda", args.local_rank)
@@ -543,6 +564,8 @@ def main():
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
                         level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+
+    
     logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
                     args.local_rank, device, args.n_gpu, bool(args.local_rank != -1), args.fp16)
 
@@ -553,21 +576,58 @@ def main():
     args.task_name = args.task_name.lower()
     if args.task_name not in processors:
         raise ValueError("Task not found: %s" % (args.task_name))
+    
     processor = processors[args.task_name]()
+    #the above will create an instance of MRPCProcessor which return lists of test and train InputExample's
+    
     args.output_mode = output_modes[args.task_name]
+    #the output_modes for all the 9 GLUE tasks are "classification" which makes sense since GLUE is a (pair) sentence classification
+
+    
     label_list = processor.get_labels()
-    num_labels = len(label_list)
+    #label_list will be ["0", "1"] for MRPC dataset
+    num_labels = len(label_list) #=> 2
 
     # Load pretrained model and tokenizer
     if args.local_rank not in [-1, 0]:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
-
+    #barrier method blocks this process till all the processes reach this point. This means that except the first process with rank 0 that gets
+    #a free pass, all the other processes need to wait
+    
     args.model_type = args.model_type.lower()
+    #in this example, this is simply bert
+    
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #for bert, the model class is the following: 'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
+
+    #in below, config_class is BertConfig that is defined at transormers/configuration_bert.py. BertConfig is a config class that contains the configuration
+    #of a BertModel. args.model_name_or_path is bert-base-uncased.
+    #I think the config_class is supposed to represent the architecture of the model so that it the model could be reconstructed. This model config file
+    #which only contains the meta data representing the model architecture and not the weights of the network either could be passed to this class in a form
+    #of json file, or could be downloaded if you use one of the standard existing models like bert-base-uncased.
+
+    #in the case of bert-base-uncased, the cloud config json file in s3 is the following:
+    #{
+    #attention_probs_dropout_prob: 0.1,
+    #hidden_act: "gelu",
+    #hidden_dropout_prob: 0.1,
+    #hidden_size: 768,
+    #initializer_range: 0.02,
+    #intermediate_size: 3072,
+    #max_position_embeddings: 512, => this must tbe the context window
+    #num_attention_heads: 12,
+    #num_hidden_layers: 12,
+    #type_vocab_size: 2,
+    #vocab_size: 30522
+    #}
+
+    
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path,
                                           num_labels=num_labels,
                                           finetuning_task=args.task_name,
                                           cache_dir=args.cache_dir if args.cache_dir else None)
+
+    
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
