@@ -89,6 +89,7 @@ PRETRAINED_INIT_CONFIGURATION = {
 def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
     vocab = collections.OrderedDict()
+    #OrderedDict is a dictionary that remembers the order entries were added
     with open(vocab_file, "r", encoding="utf-8") as reader:
         tokens = reader.readlines()
     for index, token in enumerate(tokens):
@@ -129,6 +130,15 @@ class BertTokenizer(PreTrainedTokenizer):
     def __init__(self, vocab_file, do_lower_case=True, do_basic_tokenize=True, never_split=None,
                  unk_token="[UNK]", sep_token="[SEP]", pad_token="[PAD]", cls_token="[CLS]",
                  mask_token="[MASK]", tokenize_chinese_chars=True, **kwargs):
+        #for bert-base-uncased, vocab_file is the following:
+        #/home/mohammad.sanatkar/.cache/torch/transformers/26bc1ad6c0ac742e9b52263248f6d0f00068293b33709fae12320c0e35ccfbbb.542ce4285a40d23a559526243235df47c5f75c197f04f37d1a0c124c32c9a084
+        #do_lower_case is True which makes sense since bert-base-uncased is an uncasde encoder
+        #do_basic_tokenize is True and never_split is None
+        #unk_token is [UNK], sep_token is [SEP], pad_token is [PAD], cls_token is to represent the start of token and other special
+        #tokens are not modified as well
+        #tokenize_chinese_chars is True
+        #the only kwargs that is not one of the predefined argumetns for __init__ method is max_len which is equal to 512
+
         """Constructs a BertTokenizer.
 
         Args:
@@ -149,6 +159,12 @@ class BertTokenizer(PreTrainedTokenizer):
         super(BertTokenizer, self).__init__(unk_token=unk_token, sep_token=sep_token,
                                             pad_token=pad_token, cls_token=cls_token,
                                             mask_token=mask_token, **kwargs)
+        #in above, by passing the special tokens and max_len to the parent class which is PreTrainedTokenizer, these special tokens
+        #and max_len that are attributes of the parent class PreTrainedTokenizer will be set
+
+        #the two below properties are interesting, they represent the max length of one sentence and sentence pairs given they need
+        #to be prepended and appended special tokens. For example, for a sequence pair, you are supposed to start the pair with
+        #cls_token and end both the first and second sentences with sep_token
         self.max_len_single_sentence = self.max_len - 2  # take into account special tokens
         self.max_len_sentences_pair = self.max_len - 3  # take into account special tokens
 
@@ -156,15 +172,32 @@ class BertTokenizer(PreTrainedTokenizer):
             raise ValueError(
                 "Can't find a vocabulary file at path '{}'. To load the vocabulary from a Google pretrained "
                 "model use `tokenizer = BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)`".format(vocab_file))
+
+        #for bert-base-uncased, we know that vocab_file is the following
+        #/home/mohammad.sanatkar/.cache/torch/transformers/26bc1ad6c0ac742e9b52263248f6d0f00068293b33709fae12320c0e35ccfbbb.542ce4285a40d23a559526243235df47c5f75c197f04f37d1a0c124c32c9a084 and here we want to load it as follows
         self.vocab = load_vocab(vocab_file)
+        #in above, load_vocab reads the vocab file and returns a dictionary with the values being each token in vocab and values being
+        #the index of that token. So, it preserves the order of tokens in vocab. self.vocab will be a dictioanry that takes tokens
+        #and returns their token indices
+        
         self.ids_to_tokens = collections.OrderedDict(
             [(ids, tok) for tok, ids in self.vocab.items()])
+        #in abovem self.ids_to_tokens is the invers of vocab dict and maps the vocab indices to tokens. 
+        
         self.do_basic_tokenize = do_basic_tokenize
+        #do_basic_tokenize will be True
+
+        #never_split will be None
         if do_basic_tokenize:
+            #do_basic_tokenize is True
             self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case,
                                                   never_split=never_split,
                                                   tokenize_chinese_chars=tokenize_chinese_chars)
+
+        #in below, self.vocab is a python dictionary that maps tokens to their vocab indices and unk_token is [UNK]
         self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab, unk_token=self.unk_token)
+        #WordpieceTokenizer is the actual BERT tokenizer that has the responsibilty to segement each word into its forming
+        #Byte-Pair segments using greedy-first-longest-match
 
     @property
     def vocab_size(self):
@@ -283,11 +316,14 @@ class BasicTokenizer(object):
                 This should likely be deactivated for Japanese:
                 see: https://github.com/huggingface/pytorch-pretrained-BERT/issues/328
         """
+        
+        #for bert-base-uncased, never_split is None
         if never_split is None:
             never_split = []
-        self.do_lower_case = do_lower_case
+            
+        self.do_lower_case = do_lower_case #for bert-base-uncased, do_lower_case is True
         self.never_split = never_split
-        self.tokenize_chinese_chars = tokenize_chinese_chars
+        self.tokenize_chinese_chars = tokenize_chinese_chars #this is True as well for bert-base-uncased
 
     def tokenize(self, text, never_split=None):
         """ Basic Tokenization of a piece of text.
@@ -406,6 +442,8 @@ class WordpieceTokenizer(object):
     """Runs WordPiece tokenization."""
 
     def __init__(self, vocab, unk_token, max_input_chars_per_word=100):
+        #for bert-base-uncased, vocab is a python dictionary that maps tokens to vocab indices, unk_token is [UNK] and
+        #max_input_chars_per_word is not provided. Therefore, it will back-off to 100
         self.vocab = vocab
         self.unk_token = unk_token
         self.max_input_chars_per_word = max_input_chars_per_word

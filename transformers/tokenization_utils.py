@@ -38,6 +38,9 @@ ADDED_TOKENS_FILE = 'added_tokens.json'
 TOKENIZER_CONFIG_FILE = 'tokenizer_config.json'
 
 class PreTrainedTokenizer(object):
+    #the main reason for having PreTrainedTokenizer is that all the pretrained models like BERT have their own special vocabualry and
+    #tokenization technique. Their vocabularies and their corresponding tokenizers are not part of the models and have to be perforemed
+    #as a pre-processing step which means that they need to be loaded separately. This class will do that.
     """ Base class for all tokenizers.
     Handle all the shared methods for tokenization and special tokens as well as methods dowloading/caching/loading pretrained tokenizers as well as adding tokens to the vocabulary.
 
@@ -206,6 +209,8 @@ class PreTrainedTokenizer(object):
         return self.convert_tokens_to_ids(self.additional_special_tokens)
 
     def __init__(self, max_len=None, **kwargs):
+        #max_lem passed for bert-base-uncased is 512 and kwargs is the followings:
+        #{'unk_token': '[UNK]', 'sep_token': '[SEP]', 'pad_token': '[PAD]', 'cls_token': '[CLS]', 'mask_token': '[MASK]'}
         self._bos_token = None
         self._eos_token = None
         self._unk_token = None
@@ -216,6 +221,8 @@ class PreTrainedTokenizer(object):
         self._additional_special_tokens = []
 
         self.max_len = max_len if max_len is not None else int(1e12)
+        #in above, max_len will be equal to 512 for bert-base-uncased
+        
 
         # Added tokens
         self.added_tokens_encoder = {}
@@ -226,12 +233,17 @@ class PreTrainedTokenizer(object):
         self.init_kwargs = {}
 
         for key, value in kwargs.items():
+            #in below, SPECIAL_TOKENS_ATTRIBUTES are the followings:
+            #["bos_token", "eos_token", "unk_token", "sep_token", "pad_token", "cls_token", "mask_token", "additional_special_tokens"]
+
             if key in self.SPECIAL_TOKENS_ATTRIBUTES:
                 if key == 'additional_special_tokens':
                     assert isinstance(value, (list, tuple)) and all(isinstance(t, str) or (six.PY2 and isinstance(t, unicode)) for t in value)
                 else:
                     assert isinstance(value, str) or (six.PY2 and isinstance(value, unicode))
                 setattr(self, key, value)
+                #in above, we set the special tokens that are attributes of this parent class like unk_token, spe_token, pad_token,
+                #cls_token and mask_token
 
 
     @classmethod
@@ -288,20 +300,60 @@ class PreTrainedTokenizer(object):
 
     @classmethod
     def _from_pretrained(cls, pretrained_model_name_or_path, *init_inputs, **kwargs):
+        #for glue.sh, pretrained_model_name_or_path is equal to bert-base-uncased
+        
         cache_dir = kwargs.pop('cache_dir', None)
+        #for glue.sh, cache_dir is None. Therefore, this method is supposed to rely on the default cache folder
+        
         force_download = kwargs.pop('force_download', False)
+        #this will force download of the vocab even it the vocal already exists locally
+        
         resume_download = kwargs.pop('resume_download', False)
+        #if for some reason, the download was interrupted, this option will make the download to be resumed and not from scratch
+        
         proxies = kwargs.pop('proxies', None)
 
         s3_models = list(cls.max_model_input_sizes.keys())
+        #max_model_input_sizes determine the maximum input sizes that each pretrained model can accept. For all the pretrained models
+        #the context window input size is 512. This means that if an input sequence that we want to use the encoder to encode is
+        #longer than 512, we will truncate it. This limitaion is not because of a specific structure of the self-attention blocks but
+        #it is because these encoder models always trained on input sequences with length 512. Therefore, if you use them for seqeunces
+        #longer than 512, they still will generate a srqunce of ouput vectors with the same lenght as the input sequence but we are not
+        #sure about the quality of such vectors. another main reason that we have to stick with the input sequnce lenght of 512 and
+        #truncated the sequnece longer than 512 is the postitional embeddings and the fact that we only learned positional embeddings
+        #for at most 512 positions :)
+
+        #The max_model_input_sizes is the following:
+        #{'bert-base-uncased': 512, 'bert-large-uncased': 512, 'bert-base-cased': 512, 'bert-large-cased': 512, 'bert-base-multilingual-uncased': 512, 'bert-base-multilingual-cased': 512, 'bert-base-chinese': 512, 'bert-base-german-cased': 512, 'bert-large-uncased-whole-word-masking': 512, 'bert-large-cased-whole-word-masking': 512, 'bert-large-uncased-whole-word-masking-finetuned-squad': 512, 'bert-large-cased-whole-word-masking-finetuned-squad': 512, 'bert-base-cased-finetuned-mrpc': 512, 'bert-base-german-dbmdz-cased': 512, 'bert-base-german-dbmdz-uncased': 512}
+        
         vocab_files = {}
         init_configuration = {}
+
+        #the following if condition is satisfied because bert-base-uncased is part of s3_models. therefore, for glue.sh,
+        #we go inside the true branch of the if condition
         if pretrained_model_name_or_path in s3_models:
             # Get the vocabulary from AWS S3 bucket
+            #cls.pretrained_vocab_files_map has only one key called "vocab_files" with the following value:
+            #{'bert-base-uncased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt', 'bert-large-uncased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased-vocab.txt', 'bert-base-cased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-cased-vocab.txt', 'bert-large-cased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased-vocab.txt', 'bert-base-multilingual-uncased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-uncased-vocab.txt', 'bert-base-multilingual-cased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-cased-vocab.txt', 'bert-base-chinese': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-chinese-vocab.txt', 'bert-base-german-cased': 'https://int-deepset-models-bert.s3.eu-central-1.amazonaws.com/pytorch/bert-base-german-cased-vocab.txt', 'bert-large-uncased-whole-word-masking': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased-whole-word-masking-vocab.txt', 'bert-large-cased-whole-word-masking': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased-whole-word-masking-vocab.txt', 'bert-large-uncased-whole-word-masking-finetuned-squad': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased-whole-word-masking-finetuned-squad-vocab.txt', 'bert-large-cased-whole-word-masking-finetuned-squad': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased-whole-word-masking-finetuned-squad-vocab.txt', 'bert-base-cased-finetuned-mrpc': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-cased-finetuned-mrpc-vocab.txt', 'bert-base-german-dbmdz-cased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-german-dbmdz-cased-vocab.txt', 'bert-base-german-dbmdz-uncased': 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-german-dbmdz-uncased-vocab.txt'}
+
+            #the above means that the vocabulary of each pretrained model already exists and it is in cloud s3.
+            
             for file_id, map_list in cls.pretrained_vocab_files_map.items():
                 vocab_files[file_id] = map_list[pretrained_model_name_or_path]
+            #file_id is only equal to "vocab_files" . Therefore, vocab_fiels python dict will be the following:
+            #vocab_files["vocab_files"] = 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt'
+
+            #pretrained_init_configuration is a python dictionary of the pretrained standard models like bert-base-uncased to a a python
+            #dictionary for each of those such models. This model-specific dictionary is the list of arguments that need to be passed
+            #to the tokenizer of that specific model. pretrained_init_configuration is the following:
+            #{'bert-base-uncased': {'do_lower_case': True}, 'bert-large-uncased': {'do_lower_case': True}, 'bert-base-cased': {'do_lower_case': False}, 'bert-large-cased': {'do_lower_case': False}, 'bert-base-multilingual-uncased': {'do_lower_case': True}, 'bert-base-multilingual-cased': {'do_lower_case': False}, 'bert-base-chinese': {'do_lower_case': False}, 'bert-base-german-cased': {'do_lower_case': False}, 'bert-large-uncased-whole-word-masking': {'do_lower_case': True}, 'bert-large-cased-whole-word-masking': {'do_lower_case': False}, 'bert-large-uncased-whole-word-masking-finetuned-squad': {'do_lower_case': True}, 'bert-large-cased-whole-word-masking-finetuned-squad': {'do_lower_case': False}, 'bert-base-cased-finetuned-mrpc': {'do_lower_case': False}, 'bert-base-german-dbmdz-cased': {'do_lower_case': False}, 'bert-base-german-dbmdz-uncased': {'do_lower_case': True}}
+
+            #as you can see in above, the only argument that will be passed to the tokenizer of bert-base-uncased will be
+            #"do_lower_case": True
+
             if cls.pretrained_init_configuration and pretrained_model_name_or_path in cls.pretrained_init_configuration:
                 init_configuration = cls.pretrained_init_configuration[pretrained_model_name_or_path]
+                #init_configuration for bert-base-uncased is the following: {'do_lower_case': True}
         else:
             # Get the vocabulary from local files
             logger.info(
@@ -353,11 +405,19 @@ class PreTrainedTokenizer(object):
         # Get files from url, cache, or disk depending on the case
         try:
             resolved_vocab_files = {}
+            #vocab_files for bert-base-uncased is the following:
+            #vocab_files["vocab_files"] = 'https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt'
             for file_id, file_path in vocab_files.items():
                 if file_path is None:
                     resolved_vocab_files[file_id] = None
                 else:
                     resolved_vocab_files[file_id] = cached_path(file_path, cache_dir=cache_dir, force_download=force_download, proxies=proxies, resume_download=resume_download)
+                #the returned cached_path for bert-base-uncased will be the following:
+                #'/home/mohammad.sanatkar/.cache/torch/transformers/26bc1ad6c0ac742e9b52263248f6d0f00068293b33709fae12320c0e35ccfbbb.542ce4285a40d23a559526243235df47c5f75c197f04f37d1a0c124c32c9a084'
+
+                #the above cached_path method will download the vocab_file from s3 amazon and store it in cache folder if it doesn't
+                #already exist in cache folder. Finally, it will return the path to the vocab file in cache folder
+
         except EnvironmentError:
             if pretrained_model_name_or_path in s3_models:
                 msg = "Couldn't reach server at '{}' to download vocabulary files."
@@ -377,10 +437,13 @@ class PreTrainedTokenizer(object):
             else:
                 logger.info("loading file {} from cache at {}".format(
                     file_path, resolved_vocab_files[file_id]))
+                #for bert-base-uncased, this if branch will be executed since the vocab file didn't exist locally at the begining
+                #and downloaded from the s3 amazon clound and stored in cache folder
 
         # Prepare tokenizer initialization kwargs
         # Did we saved some inputs and kwargs to reload ?
         tokenizer_config_file = resolved_vocab_files.pop('tokenizer_config_file', None)
+        #for glue.sh tokenizer_config_file is None
         if tokenizer_config_file is not None:
             init_kwargs = json.load(open(tokenizer_config_file, encoding="utf-8"))
             saved_init_inputs = init_kwargs.pop('init_inputs', ())
@@ -388,37 +451,61 @@ class PreTrainedTokenizer(object):
                 init_inputs = saved_init_inputs
         else:
             init_kwargs = init_configuration
+            #the only init_kwargs that will be passed to the bert tokenizer is {'do_lower_case': True}
 
         # Update with newly provided kwargs
         init_kwargs.update(kwargs)
+        #the above dictionary update has no impact on init_kwargs and it is still {'do_lower_case': True}
 
         # Set max length if needed
         if pretrained_model_name_or_path in cls.max_model_input_sizes:
+            #all the pretrained models like BERT and GPT has the max input lenght of 512
+            
             # if we're using a pretrained model, ensure the tokenizer
             # wont index sequences longer than the number of positional embeddings
             max_len = cls.max_model_input_sizes[pretrained_model_name_or_path]
+            #for bert-base-uncased, max_len will be 512
+            
             if max_len is not None and isinstance(max_len, (int, float)):
                 init_kwargs['max_len'] = min(init_kwargs.get('max_len', int(1e12)), max_len)
+                #we know for bert-base-uncased, init_kwargs is only {'do_lower_case': True} and here we want to add a new argumenet
+                #for initilization of bert tokenizer which is the maximum lenght of the sequences that it will process. max_len
+                #for BERT is 512 and unless if we ask directly that we want to reduce the input context size, it will remain 512.
+                #note, glue.sh has a command-line option called max_seq_lenght that is set to be 128 but it is not used here. It is
+                #because that context input size of 128 will impact the fine-tunning task but not the BERT encoder. 
 
+        #resolved_vocab_files for bert-base-uncased will be a python dict with key being "vocab_file" associated with the value
+        #of the path of the cached file. Therefore, in below, both added_tokens_file and special_tokens_map_file will be None
         # Merge resolved_vocab_files arguments in init_kwargs.
         added_tokens_file = resolved_vocab_files.pop('added_tokens_file', None)
         special_tokens_map_file = resolved_vocab_files.pop('special_tokens_map_file', None)
+        
         for args_name, file_path in resolved_vocab_files.items():
             if args_name not in init_kwargs:
                 init_kwargs[args_name] = file_path
+
+        #after the above loop, init_kwargs will be the following:
+        #{'do_lower_case': True, 'max_len': 512, 'vocab_file': '/home/mohammad.sanatkar/.cache/torch/transformers/26bc1ad6c0ac742e9b52263248f6d0f00068293b33709fae12320c0e35ccfbbb.542ce4285a40d23a559526243235df47c5f75c197f04f37d1a0c124c32c9a084'}
+        #as you can see in above, these are arguments that you need to construct and initialize the tokenizer for BERT like
+        #whether you want to do lower case or not, or what is the max input lenght as well as the vocab file
+
+        #in below, special_tokens_map_file for be None for bert-base-uncased
         if special_tokens_map_file is not None:
             special_tokens_map = json.load(open(special_tokens_map_file, encoding="utf-8"))
             for key, value in special_tokens_map.items():
                 if key not in init_kwargs:
                     init_kwargs[key] = value
-
+        
         # Instantiate tokenizer.
         tokenizer = cls(*init_inputs, **init_kwargs)
+        #in above init_inputs is empty
+        #tokenizer will be as instance of BERT tokenizer: <transformers.tokenization_bert.BertTokenizer object at 0x7f8b06228550>
 
         # Save inputs and kwargs for saving and re-loading with ``save_pretrained``
         tokenizer.init_inputs = init_inputs
         tokenizer.init_kwargs = init_kwargs
 
+        #for bert-base-uncased, added_token_file is None
         # Add supplementary tokens.
         if added_tokens_file is not None:
             added_tok_encoder = json.load(open(added_tokens_file, encoding="utf-8"))
