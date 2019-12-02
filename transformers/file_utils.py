@@ -174,7 +174,9 @@ def filename_to_url(filename, cache_dir=None):
 def cached_path(url_or_filename, cache_dir=None, force_download=False, proxies=None, resume_download=False):
     #for most of the pretrained model like BERT url_or_filename is a url path to the json config file of the pretrained model that contains the
     #architectural information about the model. cache_dir is not provided so that this method will back off to the default cache path which is equal to
-    #/Users/msanatkar/.cache/torch/transformers. 
+    #/Users/msanatkar/.cache/torch/transformers.
+    #this method will download the json config file if it doesn't exist or if we enable force_download and finally it will return the path to the
+    #downloaded file inside the cache folder
     """
     Given something that might be a URL (or might be a local path),
     determine which. If it's a URL, download the file and cache it, and
@@ -205,7 +207,9 @@ def cached_path(url_or_filename, cache_dir=None, force_download=False, proxies=N
     if parsed.scheme in ('http', 'https', 's3'):
         # URL, so get it from the cache (downloading if necessary)
 
-        #for most of the pretrained encoders, url_or_filename is a url path and they will hit this if condition 
+        #for most of the pretrained encoders, url_or_filename is a url path and they will hit this if condition
+        #get_from_cache download the json config file if it doen't exist or force_download option in enabled. After downloading the file, this method returns
+        #the path to the file inside cache folder
         return get_from_cache(url_or_filename, cache_dir=cache_dir,
             force_download=force_download, proxies=proxies,
             resume_download=resume_download)
@@ -277,6 +281,8 @@ def http_get(url, temp_file, proxies=None, resume_size=0):
         return
     content_length = response.headers.get('Content-Length')
     total = resume_size + int(content_length) if content_length is not None else None
+
+    #tqdm is a progress bar
     progress = tqdm(unit="B", total=total, initial=resume_size)
     for chunk in response.iter_content(chunk_size=1024):
         if chunk: # filter out keep-alive new chunks
@@ -344,12 +350,25 @@ def get_from_cache(url, cache_dir=None, force_download=False, proxies=None, etag
     # If we don't have a connection (etag is None) and can't identify the file
     # try to get the last downloaded one
     if not os.path.exists(cache_path) and etag is None:
+        #here, in this if condition, we are saying if cache_path doesn't exist which means that we never downloaded this json config file in .cache before
+        #and if we do not have access to the internet wihch is confirmed by etag being None, then, we try to find to get the latest downloaded one
+        
         matching_files = fnmatch.filter(os.listdir(cache_dir), filename + '.*')
+        #os.listdir will return all the files and directories in cache_dir which is /Users/msanatkar/.cache/torch/transormers
+        #in above, fnmatch returns a sublist of files returned by listdir that matches the hash-based filename corresponding to this config json file
+        
         matching_files = list(filter(lambda s: not s.endswith('.json'), matching_files))
+        #in above, we only choose those files that do not end with ".json". It seems that for every encoder model, there exist two files in .cache
+        #one of them is a josn file which will be the json config file describing the architecture of that model and the other one does not end with
+        #json that must contain the weigths of the network
+        
         if matching_files:
             cache_path = os.path.join(cache_dir, matching_files[-1])
+            
 
     if resume_download:
+        #resume_download is for those cases that for some reason the downloading process of the files was interupted before and here we want to resume the
+        #download instead of starting from scratch
         incomplete_path = cache_path + '.incomplete'
         @contextmanager
         def _resumable_file_manager():
@@ -363,8 +382,11 @@ def get_from_cache(url, cache_dir=None, force_download=False, proxies=None, etag
             resume_size = 0
     else:
         temp_file_manager = tempfile.NamedTemporaryFile
+        #here, temp_file_manager will be a temporary file that later on when the download is complete can be moved to the actual cache folder
         resume_size = 0
 
+    #in below, we download the config file either if we didn't downlaod it before or the option force_download is True. Note: we never enable
+    #force_download because we are not crazy!
     if not os.path.exists(cache_path) or force_download:
         # Download to temporary file, then copy to cache dir once finished.
         # Otherwise you get corrupt cache entries if the download gets interrupted.
@@ -373,21 +395,30 @@ def get_from_cache(url, cache_dir=None, force_download=False, proxies=None, etag
 
             # GET file object
             if url.startswith("s3://"):
+                #for huggingface files, they don't start with s3
                 if resume_download:
                     logger.warn('Warning: resumable downloads are not implemented for "s3://" urls')
                 s3_get(url, temp_file, proxies=proxies)
             else:
-                http_get(url, temp_file, proxies=proxies, resume_size=resume_size)
+                #http_get downloads the file and writes its content into temp_file
+                http_get(url, temp_file, proxies=proxies, resume_size=resume_size)#resume_size will be zero if we didn't enable resume option
+                #here, url refer to a json config file .json
 
             # we are copying the file before closing it, so flush to avoid truncation
             temp_file.flush()
+            #flush method ensures that all the buffered data, are written into file
+            
             # shutil.copyfileobj() starts at the current position, so go to the start
             temp_file.seek(0)
 
             logger.info("copying %s to cache at %s", temp_file.name, cache_path)
             with open(cache_path, 'wb') as cache_file:
                 shutil.copyfileobj(temp_file, cache_file)
-
+                #I believe cache_path here doesn't end with .json. In particular, if you look into .cache/torch/transformers, then there are bunch
+                #of different resources which all of them have similar names hash(model_name).hash(url) with no .json suffix. Some of these files are
+                #simply json config files of models and the other could be other resources like the weigths files. The json files inside the cache folder
+                #reperesent the url path of the resource as well as the etag version. below, you can find how this json meta file is created!
+                
             logger.info("creating metadata file for %s", cache_path)
             meta = {'url': url, 'etag': etag}
             meta_path = cache_path + '.json'

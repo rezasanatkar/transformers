@@ -627,6 +627,34 @@ def main():
                                           finetuning_task=args.task_name,
                                           cache_dir=args.cache_dir if args.cache_dir else None)
 
+    #from_pretrained method will download the config json file if doesn't already exist in cache folder or if force_download is enabled. Then, after either
+    #dowloading it from cloud or finding it in cache, it will create a config object using that json config file and return it.
+    #the returned config object for bert-base-uncased for mrpc task is the following where we have overriden its fine_tunning attributed by passing it
+    #via from_pretrained method to be arg.task_name
+
+    #{
+    #"attention_probs_dropout_prob": 0.1,
+    #"finetuning_task": "mrpc",
+    #"hidden_act": "gelu",
+    #"hidden_dropout_prob": 0.1,
+    #"hidden_size": 768,
+    #"initializer_range": 0.02,
+    #"intermediate_size": 3072,
+    #"is_decoder": false,
+    #"layer_norm_eps": 1e-12,
+    #"max_position_embeddings": 512,
+    #"num_attention_heads": 12,
+    #"num_hidden_layers": 12,
+    #"num_labels": 2,
+    #"output_attentions": false,
+    #"output_hidden_states": false,
+    #"output_past": true,
+    #"pruned_heads": {},
+    #"torchscript": false,
+    #"type_vocab_size": 2,
+    #"use_bfloat16": false,
+    #"vocab_size": 30522
+    #}
     
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
                                                 do_lower_case=args.do_lower_case,

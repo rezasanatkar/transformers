@@ -162,9 +162,11 @@ class PretrainedConfig(object):
                                                proxies=proxies, resume_download=resume_download)
             #in above, we ususally want to use the default cache path. Therefore, we don't specify the cache_dir
             #the method cahced_path is defined at file_utils.py
-
             #for most of the pretrained encoder models, the config_file is a url path to a json config file in Amazon s3 that contains the architecture
             #information of the pretrained model like BERT
+
+            #the method cache_path will download the json config file if it doen't exist already in cache folder or if explicitly ask force_download
+            #at the end this method return the path to the downloaded file inside the cache folder
         except EnvironmentError:
             if pretrained_model_name_or_path in cls.pretrained_config_archive_map:
                 msg = "Couldn't reach server at '{}' to download pretrained model configuration file.".format(
@@ -181,21 +183,51 @@ class PretrainedConfig(object):
         if resolved_config_file == config_file:
             logger.info("loading configuration file {}".format(config_file))
         else:
+            #config_file will have a different name compared to resolved_config_file
             logger.info("loading configuration file {} from cache at {}".format(
                 config_file, resolved_config_file))
 
         # Load config
         config = cls.from_json_file(resolved_config_file)
+        #the above class method will create an object of PreTrainedConfig from the json file. For bert-base-uncased, the config object is the following
+        #{
+        #"attention_probs_dropout_prob": 0.1,
+        #"finetuning_task": null,
+        #"hidden_act": "gelu",
+        #"hidden_dropout_prob": 0.1,
+        #"hidden_size": 768,
+        #"initializer_range": 0.02,
+        #"intermediate_size": 3072,
+        #"is_decoder": false,
+        #"layer_norm_eps": 1e-12,
+        #"max_position_embeddings": 512,
+        #"num_attention_heads": 12,
+        #"num_hidden_layers": 12,
+        #"num_labels": 2,
+        #"output_attentions": false,
+        #"output_hidden_states": false,
+        #"output_past": true,
+        #"pruned_heads": {},
+        #"torchscript": false,
+        #"type_vocab_size": 2,
+        #"use_bfloat16": false,
+        #"vocab_size": 30522
+        #}
 
         if hasattr(config, 'pruned_heads'):
             config.pruned_heads = dict((int(key), value) for key, value in config.pruned_heads.items())
-
         # Update config with kwargs if needed
         to_remove = []
+        #here, we have the option to override the configuaration attributes of the config object using the kwargs passed to from_pretrained method.
         for key, value in kwargs.items():
             if hasattr(config, key):
                 setattr(config, key, value)
+                #overriding happens here
                 to_remove.append(key)
+
+        #in above in the case of bert-base-uncased being used for mrpc task, the only attribute of the config that is overriden is finetunning_taks that
+        #is changed from null to mrpc
+
         for key in to_remove:
             kwargs.pop(key, None)
 
@@ -209,8 +241,12 @@ class PretrainedConfig(object):
     def from_dict(cls, json_object):
         """Constructs a `Config` from a Python dictionary of parameters."""
         config = cls(vocab_size_or_config_json_file=-1)
+        #the above cls will create an object of this class => PretrainedConfig
+        
         for key, value in json_object.items():
             setattr(config, key, value)
+            #setattr will set the attributes of the config object where key are strings representing the names of attributes and value
+            #will be their values
         return config
 
     @classmethod
