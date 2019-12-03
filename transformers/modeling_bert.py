@@ -205,21 +205,64 @@ class BertEmbeddings(nn.Module):
         #of zero) the dropout for inference. 
 
     def forward(self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None):
+        #the most confusing part about this forward method is the fact that it takes both input_ids and input_embeds which seems to
+        #be redundant since if we know already the embeddings for inputs, what is the reason to use an object of this class. In fact,
+        #that is the case, we only retrieve input emebedding using input_ids from word_embeddings if input_embeds is not provided.
+
+        #if input_embds is provided which means that we do not need word_embeddings to extract input_embds, the BertEmbedding
+        #object is used to only extract the position embeddings and add them to the passed input embeddings. 
+        
         if input_ids is not None:
             input_shape = input_ids.size()
+            #here, the assumption is that input_ids is a tensor(batch_size, max_len_sequence) where the shorter sequences are padded
+            #by the special padding token [PAD]. In particular, input_ids are the vocab indices of tokens
         else:
             input_shape = inputs_embeds.size()[:-1]
+            #here, input_embeds is already the embeddings of the input sequences. Therefore, it will be a tensor of shape
+            #(batch_size, max_len_sequence, embedding_size = 768). Therefore, the input_shape that is supposed to be
+            #(batch_size, max_len_sequnece) will be extracted from input_embeds as follows: input_embeds.size()[:-1]
 
         seq_length = input_shape[1]
+        #it is obvious now that the seq_length will be the second element of input_shape
+        
         device = input_ids.device if input_ids is not None else inputs_embeds.device
+        #here, we want to decide what should be the device of position_ids and token_type_ids in the case if they are not given to
+        #us and we plan to instantiate them here. In order to extract the device, the firs step is to check which one of input_ids and
+        #input_embeds is available and use its device as the device for position_ids and token_type_ids that are about to be created.
+        
         if position_ids is None:
+            #here, we check it position_ids are not given, we need to manually create them.
+            
             position_ids = torch.arange(seq_length, dtype=torch.long, device=device)
+            #given that for all the sequences in this minibatch, they have same seq_lenght (shorter ones are padded), they
+            #essentially share a same 1-dimensional position ids tensor that can be created using torch.arange.
+            #torch.arange will return a sequence of numbers as follows [0, 1, 2, ..., seq_lenght - 1]. Note this is a 1-dimensional
+            #tensor
+            
             position_ids = position_ids.unsqueeze(0).expand(input_shape)
+            #in above, position_ids.unsqueeze(0) will add a dimension of size 1 at the position 0. Therefore, it transforms
+            #position_ids from a 1d tensor(seq_length) to a 2d tensor(1, seq_lenght). That is transforming
+            #[0, 1, 2, ..., seq_lenght - 1] to [[0, 1, 2, ..., seq_lenght - 1]]
+
+            #the second transformation applied to position_ids is expand method which is similar to tile operation in the sense it
+            #increases the size of a dimension of a tensor by copying its values across the other dimension. For example, you
+            #can expand the position_ids from a tensor of shape(1, seq_lenght) to a tensor of shape(batch_size, seq_lenght) by applying
+            #expand([batch_size, seq_lenght]) to the unaqueezed position_ids tensor. The final position_ids tensor will be the
+            #following: [[0, 1, 2, ..., seq_lenght - 1], [0, 1, 2, ..., seq_lenght - 1], ..., [0, 1, 2, ..., seq_length - 1]]
+
+            
         if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+            #here, if token_type_ids is not provided, we create a zero tensor of shape(batch_size, seq_lenght)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
+            #this is the main section of this forward method. If input_embeds is not passed as an argument of the forwrard method,
+            #then we use word_embedding to extract the embedding vectors corresponding to these input_ids. Therefore, if
+            #input_ids is a 2d tensor(batch_size, seq_lenght), then input_embeds will be a
+            #3d tensor(batch_size, seq_lenght, embedding_size)
+
+            
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
