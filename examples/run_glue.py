@@ -665,11 +665,24 @@ def main():
     #which is enabled for glue.sh . The cache_dir option is not provided inside glue.sh which causes None to be passed instead.
     #This results in this method to rely on the default cache folder which is the following:
     #/home/mohammad.sanatkar/.cache/torch/transformers
-    
+
+    #tokenizer will be an object of bert tokenizer that first download the vocab file for bert-base-unacased from s3 amazon
+    #cloud and cache it. Then, it will read this file and create a vocab corresponding to byte-pair encoding of bert-base-uncased
+    #also, this tokenizer knows about what are the special tokens it needs to add to the begining of the sencteces and the end
+    #of sentences as well as how to separate two sentecens in the case of pair sequence classification. Also, it has access
+    #internally to word segmenter that has the responsibilty to use a greedy first longest match to segment each word into its
+    #forming byte-pair encoding segments. 
+
+
+    #model_class for bert-base-uncased is BertForSequenceClassification which is implemented at modeling_bert.py
     model = model_class.from_pretrained(args.model_name_or_path,
                                         from_tf=bool('.ckpt' in args.model_name_or_path),
                                         config=config,
                                         cache_dir=args.cache_dir if args.cache_dir else None)
+    #in above, bert-base-uncased is a torch model, therefore, from_tf will be Falae (no tensorflow model)
+    #also, cache_dir will be None which results in this class to rely on the default cache directory
+    #the config arguments is a config object that describes the architecture of bert-base-uncased like the activation type,
+    #number of attention-block layers, number of attention heads, hidden size, fine-tunning task, ...
 
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab

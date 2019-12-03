@@ -251,6 +251,36 @@ class PreTrainedModel(nn.Module):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        #in above, both * and ** are used for unpacking the varying length input arguments where * captures non-keyword arguments
+        #and ** captures keyword-arguments. Therefore, model_args will a tuple and kwargs will be a dictionary
+        #for bert-base-uncased, pretrained_model_name_or_path is equal to bert-base-uncased
+        #for bert-base-uncased, model_args will be empty since inside run_glue.py all the passed arguments to from_pretrained method
+        #are keyword arguments.
+        #kwargs is the following:
+        #{'from_tf': False, 'config': {
+        #"attention_probs_dropout_prob": 0.1,
+        #"finetuning_task": "mrpc",
+        #"hidden_act": "gelu",
+        #"hidden_dropout_prob": 0.1,
+        #"hidden_size": 768,
+        #"initializer_range": 0.02,
+        #"intermediate_size": 3072,
+        #"is_decoder": false,
+        #"layer_norm_eps": 1e-12,
+        #"max_position_embeddings": 512,
+        #"num_attention_heads": 12,
+        #"num_hidden_layers": 12,
+        #"num_labels": 2,
+        #"output_attentions": false,
+        #"output_hidden_states": false,
+        #"output_past": true,
+        #"pruned_heads": {},
+        #"torchscript": false,
+        #"type_vocab_size": 2,
+        #"use_bfloat16": false,
+        #"vocab_size": 30522
+        #}
+        #, 'cache_dir': None}
         r"""Instantiate a pretrained pytorch model from a pre-trained model configuration.
 
         The model is set in evaluation mode by default using ``model.eval()`` (Dropout modules are deactivated)
@@ -322,14 +352,14 @@ class PreTrainedModel(nn.Module):
             logger.warning("There is currently an upstream reproducibility issue with ALBERT v2 models. Please see " +
                            "https://github.com/google-research/google-research/issues/119 for more information.")
 
-        config = kwargs.pop('config', None)
-        state_dict = kwargs.pop('state_dict', None)
-        cache_dir = kwargs.pop('cache_dir', None)
-        from_tf = kwargs.pop('from_tf', False)
-        force_download = kwargs.pop('force_download', False)
-        resume_download = kwargs.pop('resume_download', False)
-        proxies = kwargs.pop('proxies', None)
-        output_loading_info = kwargs.pop('output_loading_info', False)
+        config = kwargs.pop('config', None) #config will be dictioanry that describes the properties of bert-base-uncased
+        state_dict = kwargs.pop('state_dict', None)#None
+        cache_dir = kwargs.pop('cache_dir', None)#None
+        from_tf = kwargs.pop('from_tf', False)#False
+        force_download = kwargs.pop('force_download', False)#False
+        resume_download = kwargs.pop('resume_download', False)#False
+        proxies = kwargs.pop('proxies', None)#none
+        output_loading_info = kwargs.pop('output_loading_info', False)#False
 
         # Load config
         if config is None:
@@ -342,12 +372,17 @@ class PreTrainedModel(nn.Module):
                 **kwargs
             )
         else:
-            model_kwargs = kwargs
+            #bert-base-uncased hits this branch
+            model_kwargs = kwargs #empty for bert-base-uncased 
 
         # Load model
         if pretrained_model_name_or_path is not None:
+            #for bert-base-uncased, we get all the way to here
             if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
+                #bert-base-uncased is one of the pretrained_model_archive_map
                 archive_file = cls.pretrained_model_archive_map[pretrained_model_name_or_path]
+                #archive_file will be equal to the following for bert-base-uncased
+                #https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-pytorch_model.bin
             elif os.path.isdir(pretrained_model_name_or_path):
                 if from_tf and os.path.isfile(os.path.join(pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index")):
                     # Load from a TF 1.0 checkpoint
@@ -372,6 +407,10 @@ class PreTrainedModel(nn.Module):
             try:
                 resolved_archive_file = cached_path(archive_file, cache_dir=cache_dir, force_download=force_download,
                                                     proxies=proxies, resume_download=resume_download)
+                #in above, we try to download the model bin file (weights) if it is not in cache already. Finally, we will return
+                #a path to the model bin file in cache
+                #resolved_archive_file for bert-base-uncased is the following:
+                #/home/mohammad.sanatkar/.cache/torch/transformers/aa1ef1aede4482d0dbcd4d52baad8ae300e60902e88fcb0bebdec09afd232066.36ca03ab34a1a5d5fa7bc3d03d55c4fa650fed07220e2eeebc06ce58d0e9a157
             except EnvironmentError:
                 if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
                     msg = "Couldn't reach server at '{}' to download pretrained weights.".format(
@@ -385,17 +424,21 @@ class PreTrainedModel(nn.Module):
                             archive_file,
                             [WEIGHTS_NAME, TF2_WEIGHTS_NAME, TF_WEIGHTS_NAME])
                 raise EnvironmentError(msg)
-
+            
             if resolved_archive_file == archive_file:
                 logger.info("loading weights file {}".format(archive_file))
             else:
                 logger.info("loading weights file {} from cache at {}".format(
                     archive_file, resolved_archive_file))
+                #bert-base-uncased hits this branch
         else:
             resolved_archive_file = None
 
         # Instantiate model.
+        #in below, model_args will be empty also model_kwargs will be empty since all the keyword arguments are poped already
+        #config contains the properties for bert-base-uncased
         model = cls(config, *model_args, **model_kwargs)
+        #for bert-base-uncased, model will be BertForSequenceClassification
 
         if state_dict is None and not from_tf:
             state_dict = torch.load(resolved_archive_file, map_location='cpu')
