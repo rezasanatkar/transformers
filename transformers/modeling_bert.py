@@ -264,10 +264,24 @@ class BertEmbeddings(nn.Module):
 
             
         position_embeddings = self.position_embeddings(position_ids)
+        #here, position_ids is a 2d tensor(batch_size, seq_lenght) and position_embeddings will be a
+        #3d tensor(batch_size, seq_lenght, embedding_size)
+        
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        #here, token_type_ids is a all-zero tensor(batch_size, seq_lenght) and token_type_embeddings will be
+        #a 3d tensor(batch_size, seq_lenght, embedding_size)
 
         embeddings = inputs_embeds + position_embeddings + token_type_embeddings
+        #here, given all the above tensors are 3d tensor(batch_size, seq_lenght, embedding_size), we simply add them together
+        #to get a unified 3d tensor(batch_size, seq_lenght, embedding_size)
+
+        
+        #after computing embeddings in above, the we apply LayerNorm on top of these embeddings that aggregate the statistics across
+        #only the last dimension of embeddings which has size of embedding_size = 768. It means that normalization happens per each
+        #embedding vector separately.
         embeddings = self.LayerNorm(embeddings)
+
+        #finally, we apply dropout with the dropout probability of 0.1
         embeddings = self.dropout(embeddings)
         return embeddings
 
@@ -275,16 +289,31 @@ class BertEmbeddings(nn.Module):
 class BertSelfAttention(nn.Module):
     def __init__(self, config):
         super(BertSelfAttention, self).__init__()
+
+        #for bert-base-uncased, hidden_size is 768 and num_attention_heads is 12. Which means that the internal hidden size for each
+        #head will be 768 / 12 = 64
+
+        #in below, we check if hidden_size is a factor of num_attention_heads
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+
+        #output_attentions is False for bert-base-uncase
         self.output_attentions = config.output_attentions
 
+        #num_attention_heads is 12 for bert-base-uncased
         self.num_attention_heads = config.num_attention_heads
+
+        #attention_head_size which the size of internal hidden state for each head is equal to 768 / 12 = 64
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+
+        #all_head_size will be equal to 768 which is the concatenation of the ouput of the 12 heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
+        #in below, all the three query, key and value linear layers take the input embeddings with dimension size 768 and
+        #generate query, key and value vectors for all the 12 heads simultanously. 
+        
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
@@ -426,10 +455,15 @@ class BertLayer(nn.Module):
     def __init__(self, config):
         super(BertLayer, self).__init__()
         self.attention = BertAttention(config)
+
+        #is_decoder is False for bert-base-uncased which makes sence since we want to used BERT as encoder
         self.is_decoder = config.is_decoder
-        if self.is_decoder:
+        
+        if self.is_decoder: 
             self.crossattention = BertAttention(config)
+            
         self.intermediate = BertIntermediate(config)
+        
         self.output = BertOutput(config)
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None, encoder_hidden_states=None, encoder_attention_mask=None):
@@ -451,9 +485,20 @@ class BertLayer(nn.Module):
 class BertEncoder(nn.Module):
     def __init__(self, config):
         super(BertEncoder, self).__init__()
+
+        #for bert-base-uncased, output_attentions is False
         self.output_attentions = config.output_attentions
+
+        #for bert-base-uncased, output_hidden_states is False
         self.output_hidden_states = config.output_hidden_states
+
+
+        #here, num_hidden_layers is 12
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        #note: nn.ModuleList is different from nn.Sequential. In particular, nn.ModuleList is like a python list and doesn't
+        #provide any additional functionality. This means that inside the forward method of BertEncoder, you need to manually
+        #glue them together by passing the ouput of ith one as the input of (i+1)th layer. However, nn.Sequential does the glueing
+        #for you, which means that you can invoke the module returned by nn.Sequential as a single unified module
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None, encoder_hidden_states=None, encoder_attention_mask=None):
         all_hidden_states = ()
@@ -699,8 +744,14 @@ class BertModel(BertPreTrainedModel):
 
         self.embeddings = BertEmbeddings(config)
         #BertEmbeddings is directly derived from nn.Module
+        #the self.embeddings nn.module here is a torch neural network that encapsulates the embeddings for the tokens in vocab
+        #as well as 512 positional embeddings. For each input tensor of minibatch of sequences [batch_size, seq_length] which
+        #contains the vocab indices of input sequences, it will return a tensor embedding of
+        #size(batch_size, seq_lenght, embedding_size)
         
         self.encoder = BertEncoder(config)
+        #BertEncoder is also derived from nn.Module
+        
         self.pooler = BertPooler(config)
 
         self.init_weights()
