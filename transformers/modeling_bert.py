@@ -149,14 +149,60 @@ class BertEmbeddings(nn.Module):
     """
     def __init__(self, config):
         super(BertEmbeddings, self).__init__()
+
+        #nn.Embedding encapsulates a tensor that represent embeddings and provides some functionalities on top of the
+        #embedding tensor in order to slice it in order to return tensor embeddings corresponding to specific vocab indices
+        #In particular, if you look into pytorch/torch/nn/modules/sparse.py which contains the implementation of Embedding
+        #class, you notice that class Embedding is also derived from nn.Module. This means that the Embedding class only
+        #needs to define the forward method and the backprob fn is provided by nn.Module.
+
+        #To instantiate an object of nn.Embeddings, you nedd provide num_embeddings which is the vocab.size, embedding_dim
+        #which is the hidden_size in the case of transformers like BERT. One optional argument that is used in below for
+        #word_embeddings is padding_idx. In NLU applications, in a lot of situations, we end up with padding the sequences with
+        #a special padding token in order to fasciliate batch processing of sequences. For example, if you want to do sequence
+        #classification and in a given mini-batch, some sequences are shorter than the longest sequnece, you will end up wih
+        #padding the shorter sequences in the minibatch to match the lenght of the longest sequence. In order to ensure that this
+        #padded tokens do not impact the decision and states of the network for those shorter sequences, the embedding corresponding
+        #to the padding token must be all zero vector. Using padding_idx, we are telling nn.Embedding which vocab index is corresponding
+        #to the especial padding token. Here, for the BERT vocan, the index vocab of the special padding token is 0 and therefore,
+        #padding_idx=0. This means that everytime that you provide token indices to nn.Embeddings to receive embeddings in return,
+        #for tokens with vocab indices of 0, you will get all-zero vectors. The vocab index of the padding token being 0 for BERT
+        #is not random and is by design. If you look into the BERT vocab file at ~/.cache/torch/transformers/26bc1ad6c0ac742e9b52263248f6d0f00068293b33709fae12320c0e35ccfbbb.542ce4285a40d23a559526243235df47c5f75c197f04f37d1a0c124c32c9a084, you will see that the first
+        #token is [PAD].
+        
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
+        #for bert-base-uncased, config.vocab_size is 30522, config.hidden_size is 768.
+        
+        
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+        #for position_embeddings, the number of embedding vectors is equal to max_position_embeddings which is equal to 512
+        #It is because the input context window size is 512. The embedding size for these embeddings is equal to 768.
+        
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        #for BERT, type_vocab_size is 2. Therefore, token_type_embeddings will have two vectors of dimension 768
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        #BertLayerNorm is simply torch.nn.LayerNorm. Different from BatchNormalization, the normalization in the case of
+        #LayerNorm does not occur over the batch dimension and statistics are not aggregated across the examples of a minibatch.
+        #In particualr, you have the option to specify the exact dimensions that you want to perform normalization over using
+        #the first argument that you pass to torch.nn.LayerNorm. Here, we are passing config.hidden_size which is equalt to 768
+        #to LayerNorm which is telling LayerNorm that it needs to do normalization by aggregating statistics across only the last
+        #dimension that has size of 768. That being said, you have the option to pass LayerNorm a tuple like (10, 768) which will
+        #force LayerNorm to aggregate statistics across the last two dimensions where the last dimension has size 768 and the dimension
+        #before the last dimenstion has size 10. Moreover, similar to BatchNorm, LayerNorm has learnable parameters alpha and beta
+        #by default. You can disable these learnable parameters by passing the following keyword argument to LayerNorm:
+        #elementwise_affine = False. Another optional argument for LayerNorm is eps which is used in the dominator of normalization
+        #to avoid division by zero. layer_norm_eps is equal to 1e-12
+
+        
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        #hidden_dropout_prob is equal to 0.1. nn.DropOut is derived from nn.Module
+        #during training, DropOut zeros out the activations with propbability 0.1. This means that the activations stay intact
+        #with probability 0.9. To hemogonize training with inference, during training, the activations that are not zero-out, will
+        #be multipled by 1 / .9 = 10 / 9. This normalization during training will let us to simply turn off (drop out probability
+        #of zero) the dropout for inference. 
 
     def forward(self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None):
         if input_ids is not None:
@@ -604,9 +650,13 @@ class BertModel(BertPreTrainedModel):
     """
     def __init__(self, config):
         super(BertModel, self).__init__(config)
+        #BertPreTrainedModel is derived from PreTrainedModel and the __ini__ method of PreTrainedModel will store the config
+        #object of this model as its config field member
         self.config = config
 
         self.embeddings = BertEmbeddings(config)
+        #BertEmbeddings is directly derived from nn.Module
+        
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
@@ -1017,10 +1067,20 @@ class BertForSequenceClassification(BertPreTrainedModel):
         #}
         super(BertForSequenceClassification, self).__init__(config)
         #the above super init method hits the init method of PreTrainedModel inside modeling_utils.py that inherents from
-        #nn.Module
+        #nn.Module. PreTrainedModel stores the config object of this model as its config member field.
+        #BertForSequenceClassification is derived from BertPreTrainedModel and BertPreTrainedModel is derived from
+        #PreTrainedModel. BertPreTrainedModel only has one method called _init_weights and it doesn't have __init__ method
         self.num_labels = config.num_labels #2
 
         self.bert = BertModel(config)
+        #BertModel also is derived from BertPreTrainedModel. This is kinda weird since both this class
+        #BertForSequenceClassification and its member field BertModel are derived from BertPreTrained. It seems kinda
+        #redundant.
+
+        #in particular, BertModel is the bare bert model transformer without any head for either sequence classification or
+        #question answering. In other words, BertModel only ouputs the hidden states. 
+        
+        
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
