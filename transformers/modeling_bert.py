@@ -1016,7 +1016,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
         #"vocab_size": 30522
         #}
         super(BertForSequenceClassification, self).__init__(config)
-        self.num_labels = config.num_labels
+        #the above super init method hits the init method of PreTrainedModel inside modeling_utils.py that inherents from
+        #nn.Module
+        self.num_labels = config.num_labels #2
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
