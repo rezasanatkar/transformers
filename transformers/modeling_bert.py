@@ -359,7 +359,7 @@ class BertSelfAttention(nn.Module):
         #64 is corresponding to a head.
 
 
-        #*** using self-attention layer in decoder part of seq2seq
+        # ** using self-attention layer in decoder part of seq2seq
         #the below if condition is very interesting in the sense that it enables this self attention layer also to be used as a decoder self-attention layer
         #in seq2seq modeles and not just as a self-attention layer in encoders. For this self-attention layer to be used in a decoder part of a seq2seq
         #model, its keys and values are not transformation of its hidden_states input (the embedding output vectors from the previous self-attention layer
@@ -372,7 +372,7 @@ class BertSelfAttention(nn.Module):
         #key vectors. This holds for a self-attention layer being used in decoder since both key and value vectors come from a self-attention layer in
         #encoder.
 
-        #*** what is attention mask?
+        # ** what is attention mask?
         #in order to be able to process sequences with different lenghts in a given minibatch, we need to pad them using [PAD] token to make shorter
         #sequences to have same lenght as the longer ones. Also, we will truncate those sequences that are longer than the max_seq_lenght of 512.
         #that being said, we know that the nn.Embedding used here, will return vectors of all-zeros for [PAD] tokens. Therefore, when a self-attention
@@ -382,7 +382,7 @@ class BertSelfAttention(nn.Module):
         #embedding vectors but it needs to bypass them to output. The attention mask simply specifies which tokens are actual tokens and which ones are
         #PAD tokens.
 
-        #*** what changes need to be made to attention mask for a self-attention layer in decoder part of a seq2seq model?
+        # ** what changes need to be made to attention mask for a self-attention layer in decoder part of a seq2seq model?
         #since for a self-attention layer in decoder part of a seq2seq model, the keys and values are from a seprate self-attention layer in encoder
         #part of the seq2seq model, the attention-mask needs to be replaced from the one that distinguish between actual tokens and PAD tokens in
         #the self-attention layer in encoder. This change in attention-mask being applied in below. 
@@ -406,7 +406,7 @@ class BertSelfAttention(nn.Module):
         #transpose_for_scores reshape the tensors of shape(batch_size, seq_lenght, 768) to tensors of size(batch_size, 12, seq_length, 64) where
         #12 denotes the number of heads and 64 is the size of the internal embedding of each head.
 
-        #** torch.matmul is a batched matrix multiplication if at least one of the tensors has rank of at least three:
+        # ** torch.matmul is a batched matrix multiplication if at least one of the tensors has rank of at least three:
         #this behavior is by design in pytorch. In a batched matrix multiplication, only the last two dimensions are involved in 2d matrix multiplication
         #and all the other dimensions are considered as batch dimensions. An example of matmul batched multiplication is the following:
         
@@ -421,7 +421,7 @@ class BertSelfAttention(nn.Module):
         #of ith sequnce corresponding to the jth head.
 
 
-        #** why normalization of attention_scores?
+        # ** why normalization of attention_scores?
         #attention_scores is a tensor(batch_size, 12, seq_lenght, seq_lengh) where each entry represents the inner product similarity between tokens.
         #also, attentions_scores(i, j, k, :) is a row vector that contains the attention scores for kth token of ith sequence corresponding to jth
         #head over all the other tokens in ith sequence. After describing, what attention_scores contains, the next step is to discuss why normalization
@@ -431,7 +431,7 @@ class BertSelfAttention(nn.Module):
         #pay attention to other tokens. Normalization of the attention_scores by the square root of the size of internal emebedding of each head which
         #is 16, will distibute the probaility mass more evenly among tokens. So, we divide each attention_score by 8.
 
-        #** why normalization of attention_scores by the square root of the embedding size?
+        # ** why normalization of attention_scores by the square root of the embedding size?
         #the main reason stems from the way that these attention scores are computed at the first place. Each single attention score is computed by inner
         #product of query vector and key vector. Therefore, you can imagine that the inner product of query and key vectors that are aligned, will scale
         #linearly by the dimension of those vectors. So, in order to ensure that the attention scores are invariant with respect to the dimensions of
@@ -440,13 +440,13 @@ class BertSelfAttention(nn.Module):
         
         attention_scores = attention_scores / math.sqrt(self.attention_head_size) #here, attention_head_size will be 64 so its square root will be 8
 
-        #** When attention mask is not required?
+        # ** When attention mask is not required?
         #in below, we apply attention_mask that is supposed to tell us which tokens are actual tokens and which ones are PAD tokens. There are a number of
         #applications that such an attention_mask is not required. For example, when we train BERT as a lonaguage model on corpus of text where all the
         #sequences in a mini-batch have lenght of 512. However, for most of NLU tasks, we can assume that the sequences belonging to a sequence have
         #different lenghts and therefore such attention_mask is required.
 
-        #** How attention mask garauntees zero-weight for PAD tokens?
+        # ** How attention mask garauntees zero-weight for PAD tokens?
         #first, the tensor of attention_mask need to be the same dimension as attention_scores(batch_size, 12, seq_lenght, seq_length). Also, it has
         #to be -inf for all PAD tokens and zero for non-PAD tokens to ensure that the softmax weight for PAD tokens will be zero, and no impact for
         #non-PAD tokens. This means that if k is a PAD token in ith sequence of minibatch, then we need to have the following:
@@ -463,26 +463,59 @@ class BertSelfAttention(nn.Module):
         #tensor(i, j, k, :) will be a softmax vector.
         
 
-        #** How dropout is applied to attention_probs?
-        #Below is the decription of HuggingFace which is hard to understand!
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
+        # ** How dropout is applied to attention_probs?
+        #Below is the decription of HuggingFace about dropout being applied to attention_probs which is hard to understand 
+        # {This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.}
         #This is what I think they meant: applying dropout as normal results in droping (zeroing out) one-by-one activations and not as a whole.
         #However, if you zero-out the weight corresponding to a token, it means that you will drop that token in that head completely since its
         #contributing weight is zero.
         
         attention_probs = self.dropout(attention_probs)
 
+        # ** what is the difference between attention_mask and head_mask?
+        #the main difference is that attention_mask is being applied before softmax layer which garauntees that the softmax probabilities are actually
+        #representing a probability vector and they add to one, whereas head_mask is applied after softmax layer and therefore the softmax vector is not
+        #a probability vector and it doesn't add up to one. The other difference between these two masks are their objectives. attention_mask is to
+        #represent the PAD tokens via -inf entries, whereas head_mask's objective is not to represent the PAD tokens but probably a particular masking
+        #structure that the architecture requires. head_mask will represent the tokens that it wants to mask by zero entries and no-change tokens by
+        #one entries
+        
         # Mask heads if we want to
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
+            #the above multiplication is point-wise multiplication and therefore head_mask should have the same dimension as the attention_probs which
+            #is (batch_size, 12, seq_lenght, seq_lenght)
 
+        # ** How to use attention_probs to compute weighted average output embeddings for the self-attention layer?
+        #we know that attention_probs is a tensor(batch_size, 12, seq_lenght, seq_lenght) where attention_probs(i, j, k, :) is a row vector with the
+        #lenght of the seq_lenght and represent the attention weights for the kth token of ith sequence for jth head. value_layer is a tensor
+        #of size(batch_size, 12, seq_lenght, 64) where value_layer(i, j, k, :) dontes the value row vector with the lenght of 64 for the token
+        #kth of ith sequence for jth head. Therefore, torch.matmul that becomes a batched-norm matrix multiplication since at least of these two
+        #tensors has rank greater and equal to 3, results in a tensor of size(batch_size, 12, seq_lenght, 64) where context_layer(i, j, k, :)
+        #is the ouput row vector with the lenght 64 corresponding to kth token of ith sequence for jth head.
         context_layer = torch.matmul(attention_probs, value_layer)
 
+        #context_layer is a tensor(batch_size, 12, seq_lenght, 64). In order to generate the final output embeddings for the self-attention layer,
+        #we need to conctatenate the 12 single-head vectors of size 64 to create a single vector of size 768. Therefore, the first step is swap
+        #seq_lenght and head dimension to get a context_layer tensor of (batch_size, seq_lenght, 12, 64)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+
+        # ** why do we need to call contiguous after permute and transpose methods?
+        #The operations like transpose, permute, view, exapand do not result in generating new tensors with the asked dimensions but only modifies
+        #the meta information in Tensor object to provide the caller with the dimension that it asked for. To force torch to actually change the
+        #underlying memory of tensor and not only the meta data of tensor, you need to call contiguous method over the tensor.
+
+
+        #context_layer is a tensor(batch_size, seq_lenght, 12, 64). Here, we want to concatenate the 12 vectors of lenght 64. Therefore, the new shape
+        #for the context_layer tensor must be (batch_size, seq_lenght, 768)
+        
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
+        #the above reshape operation leads to context_layer have shape of (batch_size, seq_lenght, 768)
 
+        #if we have asked this self-attention layer to output attention_probs as well as the ouput embeddings, then we return both the output
+        #embeddings and attenion_probs
         outputs = (context_layer, attention_probs) if self.output_attentions else (context_layer,)
         return outputs
 
@@ -490,21 +523,67 @@ class BertSelfAttention(nn.Module):
 class BertSelfOutput(nn.Module):
     def __init__(self, config):
         super(BertSelfOutput, self).__init__()
+
+        # ** what is the main goal of BertSelfOutput?
+        #this block is the second block of BertAttention and takes tensors of size(batch_size, seq_lenght, 768) and ouputs sensors of
+        #size(batch_size, seq_lenght, 768). In particular, it applies linear matrix multiplication of size 768 x 768 to each row vector
+        #of the input tensor(i, j, :). It does such a batched matrix multiplication using the internal batched matrix multiplication.
+        #also, another functionality of this block is to implement the skip-connection from the input of the self-attention block to its
+        #ouputs. 
+        
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        #here, hidden_size is 768.
+        
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        #BertLayerNorm is just nn.LayerNorm where passing config.hidden_size as the first argument of nn.LayerNorm forces that the empirical
+        #means and variances are aggregated across only the last dimention of size of 768 of its input tensors. 
+        
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        #the hidden_dropout_prob is 0.1
 
     def forward(self, hidden_states, input_tensor):
+        #here, hidden_states is the output embedding vectors generated by the self-attention block whereas input_tensor is the the input
+        #embeddings to the self-attention block.
+        
         hidden_states = self.dense(hidden_states)
+        #here, hidden_states is a tensor(batch_size, seq_lenght, 768) and the ouput hidden_states is a tensor(batch_size, seq_lenght, 768)
+        #self.dense is an instance of nn.Linear which encapsulates the weight tensor of size 768 x 768, and based on its internal nn.MatMul
+        #will perform batched matrix multiplication which means that each row vector tensor(i, j, :) is multplied by the 768 x 768 weight matrix.
+        
         hidden_states = self.dropout(hidden_states)
+        #the above dropout layer applied dropout with probability of 0.1
+
+        # ** Why we should apply LayerNorm after DropOut?
+        #here, LayerNorm is supposed to compute statistics for each row output embedding vector of size(1, 768). Assume, that you apply LayerNorm
+        #before DropOut, then there will be some cases that an activation is dropped from the output embedding vector of a token, but its value
+        #is used to compute the statistics by LayerNorm. Therefore, you can see that if you apply LayerNorm before DropOut, its computed
+        #statistics could potentially be invalied based on the dropped activations. 
+
+        #here, we want to perform two actions: skip-connection and layer-normalization. The skip-connection part is implemented by adding
+        #the input embedding to self-attention layer (input_tensor) by its ouput (hidden_states) before being passed to normalization layer.
+        #the normalization layer which is nn.LayerNorm is instantiated here such that it aggregates the empirical mean and varaince across the last
+        #dimension of size 768. In other words, LayerNorm statistics are being computed for each token separately. 
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        
         return hidden_states
 
 
 class BertAttention(nn.Module):
     def __init__(self, config):
         super(BertAttention, self).__init__()
+
+        # ** what are the two main blocks of BertAttention?
+        #the BertAttention layer consists of two main blocks: (1) the multi-head self attention layer that takes tensors of size
+        #(btach_size, seq_lenght, 768) and outputs the tensors of size(batch_size, seq_lenght, 768) where each input token emebedding row vector
+        #(1, 768) is mapped to a row ouput embedding vector of size(1, 768). The issue with this output embedding vector of size(1, 768) is that
+        #it is composed by concatenation of ouput embeddings of size 64 ot 12 heads. (2) the second block in BertAttention aims at adressing
+        #the issue of the first block with the main objective of resolving this alliasing issue. This second block applies a single layer of neural
+        #network with input size of 768 and the output size of 768, which is applied to each token output embedding vector separately. This second
+        #block is called BertSelfOutput. BertSelfOutput, after applying this batched matrix multiplication of 768 x 768, it does the following steps
+        #as well in this order: (i) droput (ii) skip-connection (iii) LayerNorm
+        
         self.self = BertSelfAttention(config)
+        
         self.output = BertSelfOutput(config)
         self.pruned_heads = set()
 
@@ -532,6 +611,7 @@ class BertAttention(nn.Module):
         self.pruned_heads = self.pruned_heads.union(heads)
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None, encoder_hidden_states=None, encoder_attention_mask=None):
+        
         self_outputs = self.self(hidden_states, attention_mask, head_mask, encoder_hidden_states, encoder_attention_mask)
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
