@@ -329,6 +329,16 @@ class BertSelfAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x):
+        #here, x is a 3d tensor (batch_size, seq_length, 768) where it could be a 3d tensor corresponding eitehr to keys, values or queries.
+        #for each given token, all of the 3 query, value and key vectors are row vectors of size (1 x 768). However, we know that in the case of
+        #multi-head attentions, we need to divide all these 3 vectors into 12 subvectors of size (1 x 64). It is the main functionality of this method.
+        #In particular, this method realizes this functionality by reshapeing these three row vectors of size (1 x 768). The last dimensions of query,
+        #value and key tensors have size of 768, and we need to break it into two dimensions of sizes 12 and 64 where 12 is the numebr of heads and
+        #64 is the internal embedding size of each individual head. Therefore, the reshaping will transform the tensors from the
+        #size(batch_size, seq_lenght, 768) to size(batch_size, seq_lenght, 12, 64). After this reshaping operation and before returnning the resahped
+        #tensor, we need to switch the second and third dimension so that we get a tensor of size(batch_size, 12, seq_lenght, 64). This means that before
+        #fir each given token, we had all its correspodning keys, values and queries next to each other, and now after this permutation, for each given
+        #head, we have all of its corresponding keys, values and queries corresponding to different tokens next to each other. 
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
@@ -344,12 +354,45 @@ class BertSelfAttention(nn.Module):
         #query matrix is 768 x 768 tensor. This means that each input embedding row vector of 1 x 768 will be transformed into
         #a 1 x 768 row vector by multiplication by the 768 x 768 query weight matrix. 
         mixed_query_layer = self.query(hidden_states)
-        
+        #the above mixed_query_layer is a tensor(batch_size, seq_lenght, 768) that containes the query vector for tokens of different sequences belonging
+        #to a minibatch for all the heads. In particual, you need divide each query row vector of (1 x 768) into 12 parts and each part with dimension of
+        #64 is corresponding to a head.
 
+
+        #*** using self-attention layer in decoder part of seq2seq
+        #the below if condition is very interesting in the sense that it enables this self attention layer also to be used as a decoder self-attention layer
+        #in seq2seq modeles and not just as a self-attention layer in encoders. For this self-attention layer to be used in a decoder part of a seq2seq
+        #model, its keys and values are not transformation of its hidden_states input (the embedding output vectors from the previous self-attention layer
+        #in decoder) and only its queries are transformation of its hidden states input. In particualr, a self-attention in decoder part of seq2seq model
+        #generates its keys and values as transformation of hidden states (embedding vectors) produced by a self-attention layer in encoder part of the
+        #seq2seq model. This makes sense for the decoder to generate a new sequence by looking at the encoded input sequence. Using self-attention layer
+        #in decoder part of a seq2seq model, there is no a specific requirement that the seq_length of decoder is same as the seq_lenght of encoder.
+        #In particular, different sequence lenghts of decoder and encoder do not make any issue for a self-attention layer in decoder since the number of
+        #query vectors could be different from the number of value and key vectors. However, the number of value vectors must be same as the number of
+        #key vectors. This holds for a self-attention layer being used in decoder since both key and value vectors come from a self-attention layer in
+        #encoder.
+
+        #*** what is attention mask?
+        #in order to be able to process sequences with different lenghts in a given minibatch, we need to pad them using [PAD] token to make shorter
+        #sequences to have same lenght as the longer ones. Also, we will truncate those sequences that are longer than the max_seq_lenght of 512.
+        #that being said, we know that the nn.Embedding used here, will return vectors of all-zeros for [PAD] tokens. Therefore, when a self-attention
+        #layer process its inpur embedding vectors, it only makes sense it only involves the non-PAD tokens to compute output embedding vectors corresponding
+        #to non-PAD tokens. That being said, you expect from a self-attention layer to ensure that the number of ouput embedding vectors is equal to the
+        #number of input embedding vectors. This means that a self-attention layer should not use the embeddings of PAD tokens to compute the output
+        #embedding vectors but it needs to bypass them to output. The attention mask simply specifies which tokens are actual tokens and which ones are
+        #PAD tokens.
+
+        #*** what changes need to be made to attention mask for a self-attention layer in decoder part of a seq2seq model?
+        #since for a self-attention layer in decoder part of a seq2seq model, the keys and values are from a seprate self-attention layer in encoder
+        #part of the seq2seq model, the attention-mask needs to be replaced from the one that distinguish between actual tokens and PAD tokens in
+        #the self-attention layer in encoder. This change in attention-mask being applied in below. 
+        
         # If this is instantiated as a cross-attention module, the keys
         # and values come from an encoder; the attention mask needs to be
         # such that the encoder's padding tokens are not attended to.
         if encoder_hidden_states is not None:
+            #if encoder_hidden_states is not None, it means that we are using this self-attention layer in decoder part of a seq2seq model, and
+            #encoder_hidden_states are the output vectors from a self-attention layer in encoder part of the seq2seq model.
             mixed_key_layer = self.key(encoder_hidden_states)
             mixed_value_layer = self.value(encoder_hidden_states)
             attention_mask = encoder_attention_mask
@@ -360,19 +403,74 @@ class BertSelfAttention(nn.Module):
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
+        #transpose_for_scores reshape the tensors of shape(batch_size, seq_lenght, 768) to tensors of size(batch_size, 12, seq_length, 64) where
+        #12 denotes the number of heads and 64 is the size of the internal embedding of each head.
 
+        #** torch.matmul is a batched matrix multiplication if at least one of the tensors has rank of at least three:
+        #this behavior is by design in pytorch. In a batched matrix multiplication, only the last two dimensions are involved in 2d matrix multiplication
+        #and all the other dimensions are considered as batch dimensions. An example of matmul batched multiplication is the following:
+        
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        #in above, both key_layer and query_layer are (batch_size, 12, seq_lenght, 64). First, we transpose key_layer by swapping its 3rd and 4th
+        #dimension. This means that the transposed version of ley_layer will be (batch_size, 12, 64, seq_lenght). Also, since both of these tensors
+        #have at least rank of 3, matmul will perform a batched norm multiplication. That is the output of the following multiplication
+        #query(batch_size, 12, seq_lengh, 64) x key(batch_size, 12, 64, seq_length) = attention(batch_size, 12 , seq_lenght, seq_length) where each
+        #attention(i, j, :, :) is a seq_length x seq_length 2d tensor that is computed by 2d matrix multiplication of
+        #query(i, j, :, :) and key(i, j, :, :). In particular, attention(i, j, k, l) refers the inner product similarity between kth and lth tokens
+        #of ith sequnce corresponding to the jth head.
+
+
+        #** why normalization of attention_scores?
+        #attention_scores is a tensor(batch_size, 12, seq_lenght, seq_lengh) where each entry represents the inner product similarity between tokens.
+        #also, attentions_scores(i, j, k, :) is a row vector that contains the attention scores for kth token of ith sequence corresponding to jth
+        #head over all the other tokens in ith sequence. After describing, what attention_scores contains, the next step is to discuss why normalization
+        #of attention scores is required. The first reason is that each row vector attention_scores(i, j, k, :) is the logit attentions for kt token in
+        #ith sequence for jth head, and it needs to be transformed into probability using softmax. Now, if one of the scores in the row vector
+        #attention_scores(i, j, k, :) is much larger than the others, it will dominate the softmax probability and prevents the self-attention layer to
+        #pay attention to other tokens. Normalization of the attention_scores by the square root of the size of internal emebedding of each head which
+        #is 16, will distibute the probaility mass more evenly among tokens. So, we divide each attention_score by 8.
+
+        #** why normalization of attention_scores by the square root of the embedding size?
+        #the main reason stems from the way that these attention scores are computed at the first place. Each single attention score is computed by inner
+        #product of query vector and key vector. Therefore, you can imagine that the inner product of query and key vectors that are aligned, will scale
+        #linearly by the dimension of those vectors. So, in order to ensure that the attention scores are invariant with respect to the dimensions of
+        #those vectors, we need to divide them by the embedding size of queries and values, and not the square root of the embedding size of queries and
+        #values.
+        
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size) #here, attention_head_size will be 64 so its square root will be 8
+
+        #** When attention mask is not required?
+        #in below, we apply attention_mask that is supposed to tell us which tokens are actual tokens and which ones are PAD tokens. There are a number of
+        #applications that such an attention_mask is not required. For example, when we train BERT as a lonaguage model on corpus of text where all the
+        #sequences in a mini-batch have lenght of 512. However, for most of NLU tasks, we can assume that the sequences belonging to a sequence have
+        #different lenghts and therefore such attention_mask is required.
+
+        #** How attention mask garauntees zero-weight for PAD tokens?
+        #first, the tensor of attention_mask need to be the same dimension as attention_scores(batch_size, 12, seq_lenght, seq_length). Also, it has
+        #to be -inf for all PAD tokens and zero for non-PAD tokens to ensure that the softmax weight for PAD tokens will be zero, and no impact for
+        #non-PAD tokens. This means that if k is a PAD token in ith sequence of minibatch, then we need to have the following:
+        #mask_attention(i, :, :, k) = -inf. That is the kth column of attention matrices across all heads need to be equal to -inf. 
+        
         if attention_mask is not None:
             # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
             attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        #the final step to convert the attention_scores(batch_size, 12, seq_lenght, seq_lengh) to softmax vector by applyting softmax over the last
+        #dimension as above. Therefore, attention_probs will be a tensor(batch_size, 12, seq_lenght, seq_lenght) and each row vector
+        #tensor(i, j, k, :) will be a softmax vector.
+        
 
+        #** How dropout is applied to attention_probs?
+        #Below is the decription of HuggingFace which is hard to understand!
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
+        #This is what I think they meant: applying dropout as normal results in droping (zeroing out) one-by-one activations and not as a whole.
+        #However, if you zero-out the weight corresponding to a token, it means that you will drop that token in that head completely since its
+        #contributing weight is zero.
+        
         attention_probs = self.dropout(attention_probs)
 
         # Mask heads if we want to
