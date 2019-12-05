@@ -612,6 +612,11 @@ class BertAttention(nn.Module):
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None, encoder_hidden_states=None, encoder_attention_mask=None):
         
+        #hidden_states: the emebedding outputs of size(batch_size, seq_lenght, 768) from the self-attention layer
+
+        #attention_mask: this is mask that will represent which tokens are [PAD] tokens and which tokens are actual tokens of sequences.
+        #the [PAD] token entries are -inf whereas the actual token entries are zero. This attention_mask 
+        
         self_outputs = self.self(hidden_states, attention_mask, head_mask, encoder_hidden_states, encoder_attention_mask)
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
