@@ -615,11 +615,36 @@ class BertAttention(nn.Module):
         #hidden_states: the emebedding outputs of size(batch_size, seq_lenght, 768) from the self-attention layer
 
         #attention_mask: this is mask that will represent which tokens are [PAD] tokens and which tokens are actual tokens of sequences.
-        #the [PAD] token entries are -inf whereas the actual token entries are zero. This attention_mask 
+        #the [PAD] token entries are -inf whereas the actual token entries are zero. This attention_mask are added to logit attention
+        #score before applying the softmax layer. The size of this tensor is (batch_size, 12, seq_lenght, seq_lenght). You expect that
+        #attention_mask(i, j, :, :) for all j to be identical because for all the heads, the padded tokens are identical.
+
+        #head_maks: this is the mask that is appied after softmax. Therefore, while applying attention_mask will keep the softmax probability vector to
+        #add up to one, the head_mask will violate it and results in the softmax vector to not add up to one. head_mask is alsot a tensor with the
+        #size(batch_size, 12, seq_lenght, seq_lenght). head_mask's objective is not to denote the PAD tokens but to represent the specific structure
+        #of the encoder. The masked attentions are denoted by zero entries, whereas no-change attentions are denoted by one entries.
+
+        #encoder_hidden_states: this is a tensor of size(batch_size, seq_lenght, 768) and if it given, it will force the bert self-attention layer to
+        #act as it belongs to decoder part of a seq2seq model. That is the queries are linear transformed of the output embeddings of the previous
+        #self-attention block in the decoder part while the keys and values are linear transformation of the output embeddings of a self-attention block
+        #from the encoder part of the seq2seq model. The embedding outputs of the previous attention-block in the decoder is given by hidden_states
+        #whereas the output embeddings of the self-attention block from encoder is given by encoder_hidden_states. encoder_attention_mask
+        #is a tensor(batch_size, 12, seq_lenght, seq_length) that specifies the PAD tokens for the sequnces from encoder part.
         
         self_outputs = self.self(hidden_states, attention_mask, head_mask, encoder_hidden_states, encoder_attention_mask)
+        #self_ouputs will be a tuple where its first element is the ouput embedding of the self-attention layer with the size(batch_size, seq_lenght, 768)
+        #and its second elemnt will be attention_probs(batch_size, 12, seq_lenght, seq_lenght) if we have asked the attention-layer to output its
+        #attention probabilites
+        
         attention_output = self.output(self_outputs[0], hidden_states)
+        #self.output is an instance of BertSelfOutput which first applies a linear 768 x 768 transformation to each output embedding of size (1, 768)
+        #which is result of concatenation of 12 attention heads. Then, it applies a skip-connection. The input to the self-attention block corresponding to
+        #the skip-connection is denoted by hidden_states, whereas self_ouput[0] denotes the output embedding of self-attention layer. 
+        
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        #finally, if we have asked the self-attention block to output the attention probs of size(batch_size, 12, seq_lenght, seq_lenght), self_outpts[1:]
+        #will contains those attention_probs and we are appending them to the tuple of the emebedding outputs. 
+        
         return outputs
 
 
