@@ -1227,14 +1227,35 @@ class BertModel(BertPreTrainedModel):
         # - if the model is an encoder, make the mask broadcastable to [batch_size, num_heads, seq_length, seq_length]
         if attention_mask.dim() == 2:
             if self.config.is_decoder:
+                
+                # ** what is the impact of is_decoder being True on attention_mask?
+                #in addition to make each BertLayer to have additional crossattention to attend to the encoder hidden states, the other impact of
+                #is_decoder being True, is the structure of attention_mask. In particular, is_decoder being True implies that this BERT model is the
+                #generative leg of the seq2seq model and therefore it has to be causal. It means that at the deocder side (here) each token can only attend
+                #to its previous token. Therefore, the attention_mask needs to lower-triangular matrix to ensure that each token can only attend to its
+                #previous token. 
+                
                 batch_size, seq_length = input_shape
                 seq_ids = torch.arange(seq_length, device=device)
+                #seq_ids will be a tensor of size(seq_lenght)
+                
                 causal_mask = seq_ids[None, None, :].repeat(batch_size, seq_length, 1) <= seq_ids[None, :, None]
+                #first, we tile the seq_ids across batch dimension and row dimension of tokens using the repeat method. The resultant tensor from
+                #repeat method is (batch_size, seq_lenght, seq_lenght). Next, in order to create a lower-triangular (causal) attention matrix, we
+                #need to do a boolean tensor operation of less than or equal with a broadcasted version of seq_ids that has repeated columns using
+                #seq_ids[None, :, None]
+                
                 extended_attention_mask = causal_mask[:, None, :, :] * attention_mask[:, None, None, :]
+                #the final extended_attention_mask will be the combination of the causal_mask and the PAD attention_mask. Both of these masks neeed to be
+                #broadcasted across heads. extended_attention_mask will be a tensor of size(batch_size, 12, seq_lenght, seq_lenght)
+                
             else:
                 extended_attention_mask = attention_mask[:, None, None, :]
                 #if attention_mask is a tensor of size(batch_size, seq_lenght), then in order to be able to broadcast the attention mask
-                #
+                #across all 12 heads as well as all the attention from tokens, we need to add the second (head) and third (token) dimensions to
+                #attention_mask as above. This will change the size of attention_mask from (batch_size, seq_lenght) to extended_attention_mask with
+                #size of (batch_size, 1, 1, seq_lenght). As you can see, the assumption of such broadcast operation across tokens is that the column
+                #(last dimension) corresponding to PAD tokens must become -inf. 
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
