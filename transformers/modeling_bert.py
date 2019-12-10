@@ -1216,9 +1216,9 @@ class BertModel(BertPreTrainedModel):
         if attention_mask.dim() == 3:
             extended_attention_mask = attention_mask[:, None, :, :]
             #extended_attenntion_mask is supposed to be a tensor of size(batch_size, 12, seq_lenght, seq_lenght). Howerver, if the dimension of
-            #the passed attention_mask to this forward method is (batch_size, seq_lenght, seq_lenght), it will be enough to broadcast the 2d attention
+            #the passed attention_mask to this forward method is (batch_size, seq_lenght, seq_lenght), it will be enough to broadcast the 2-d attention
             #matrix(seq_lenght, seq_lenght) across all the 12 heads. In order for attention_mask to be able to be broadcasted across all 12 heads,
-            #we need to insert a dimension of size 1 after the batch dimension, as representitive head dimension. Such dimension extension could be
+            #we need to insert a dimension of size 1 after the batch dimension, as representitive of head dimension. Such dimension extension could be
             #done using attention_mask[:, None, :, :] that changes the dimension of attention_mask from (batch_size, seq_length, seq_lenght) to
             #(batch_size, 1, seq_lenght, seq_lenght)
 
@@ -1262,8 +1262,25 @@ class BertModel(BertPreTrainedModel):
         # positions we want to attend and -10000.0 for masked positions.
         # Since we are adding it to the raw scores before the softmax, this is
         # effectively the same as removing these entirely.
+        
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        #in above self.parameters() is a method of nn.Module and returns an iterator to the parameters of this model. In other words, self.parameters()
+        #is an interator and that is the reason that we need to use next() to get the single first element to which this iterator points.
+
+        # ** what is the use of to() method of Tensor class?
+        #You can use Tenosr.to() method for either changing the device that tensor resides on, or the dtype of the tensor as above.
+
+        # ** what is nn.Parameter?
+        #it is derived from Tensor class. Therefore, it is a special kind of Tensor. The special property of Parameter Tensor is that when they are
+        #assigend as attributes of nn.Modules, they will be automatically added to the list of Parameters of the Module and will be one of the
+        #Parametes that will be pointed with self.parameters()
+        
+        
+        
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        #before the above line, the PAD tokens in extended_attention_mask are marked by 0 entries and usuall tokens are denoted by 1 entries.
+        #since this mask will be an additive mask for attentions scores before applying softmax, we need to transform the PAD 0 tokens to a negative
+        #number with large amplitude like the above -10000, and the usual tokens to 
 
         # If a 2D ou 3D attention mask is provided for the cross-attention
         # we need to make broadcastabe to [batch_size, num_heads, seq_length, seq_length]
