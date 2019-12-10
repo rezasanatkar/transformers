@@ -883,17 +883,36 @@ class BertEncoder(nn.Module):
         return outputs  # last-layer hidden state, (all hidden states), (all attentions)
     
 class BertPooler(nn.Module):
+    #BertPooler takes the output embedding of the last layer of the BERT model with the size of (batch_sise, seq_lenght, 768).
+    #then, it will slice the embedding of the first token of each sequence and applies 768 x 768 transformation to each embedding vector.
+    #finally, it applies a tanh fn to transformed vectors. 
+    
     def __init__(self, config):
         super(BertPooler, self).__init__()
+        
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        #self.dense will be an 768 x 768 fully-connected layer. 
+        
         self.activation = nn.Tanh()
 
     def forward(self, hidden_states):
+        #hidden_states is the ouput of the last BERT layer of the BERT model. Therefore, it will be a tensor of size(batch_siz, seq_lenght, 768)
+
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
+        
         first_token_tensor = hidden_states[:, 0]
+        #hidden_states is a tensor of size(batch_size, seq_lenght, 768) and first_token_tensor will be size of (batch_size, 768) where it will contain
+        #only the emebedding of the first token of each sequnece
+        
         pooled_output = self.dense(first_token_tensor)
+        #first_token_tensor is a tensor of size(batch_size, 768) and pooled_output wil be also a tensor of size(batch_size, 768). Multiplication
+        #of the 2 dimensioanl first_token_tensor by self.dense fully-conencted layer, will tranform each embedding row vector of size (1, 768)
+        #to a new row vector of size(1, 768). Note that the embeddings of differnet tokens are not being mixed. 
+        
         pooled_output = self.activation(pooled_output)
+        #pooled_output will be the result of tanh transformation. But, I don't know what is the point of applying tanh here. 
+        
         return pooled_output
 
 
@@ -1280,43 +1299,101 @@ class BertModel(BertPreTrainedModel):
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         #before the above line, the PAD tokens in extended_attention_mask are marked by 0 entries and usuall tokens are denoted by 1 entries.
         #since this mask will be an additive mask for attentions scores before applying softmax, we need to transform the PAD 0 tokens to a negative
-        #number with large amplitude like the above -10000, and the usual tokens to 
+        #number with large amplitude like the above -10000, and the usual tokens corresponding entries to 0. 
 
         # If a 2D ou 3D attention mask is provided for the cross-attention
         # we need to make broadcastabe to [batch_size, num_heads, seq_length, seq_length]
         if encoder_attention_mask.dim() == 3:
+            
             encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+            #encoder_extended_attention_mask is supposed to be a tensor of size(batch_size, 12, decoder_seq_lenght, encoder_seq_lenght).
+            #therefore, if the size of encoder_attention_mask is (batch_size, decoder_seq_lenght, encoder_seq_lenght), we need to expnd it by
+            #adding a new dimention of head with size of 1 after the batch dimension. This will make the size of encoder_extended_attention_mask to
+            #become (batch_size, 1, decoder_seq_lenght, encoder_seq_lenght). This extra dimension will allow encoder_extended_attention_mask to be
+            #broadcasted across head dimension so that its behavior will be similar as repeating encoder_attention_mask for 12 times for each
+            #sequnce of batch.
+            
         if encoder_attention_mask.dim() == 2:
             encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
-
+            #if encoder_attention_mask is of size(batch_size, encoder_seq_lenght), then we need to exapnd it to the size of
+            #(batch_size, 1, 1, encoder_seq_lenght) which will garauntee that this mask will be broadcasted across both head and decoder_seq_lenght
+            #as you expect. 
+            
         encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
         encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * -10000.0
+
+        #in above, we want encoder_extended_attention_mask to be -1000 for PAD tokens and 0 for usual tokens so that their behavior is as you expect
+        #when they are added to logit attention scores before applying softmax. 
 
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head
         # attention_probs has shape bsz x n_heads x N x N
         # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
+
+        # ** what is the use of head_mask?
+        #its functionality is to mask out the 64 dimensional ouput emebedding vector generated by a single head in a BERT layer. Remeber for each BERT
+        #layer, each of the 12 heads generate a 64-dimensional ouput embeddings where they go through a fully-connected layer of 768 x 768 after being
+        #concanetated. Therefore, masking out a head means that to ensure that the 64-dimensional ouput vector from that head is all zero vector.
+        #such functionality can be realized by multiplying the softmax attention scores (after applying softmax) of that head by zeros. In other words,
+        #if all attention probs corresponding to a head are all zero, then the generated 64-dimensional output vector will be zero.
+        #therefore, if head_mask is [0, 1, 1, 1], then it means that we assume that all layers have 4 heads where we want to mask out the output vector
+        #generated by the first head for all the layers. 
+        
+        
         if head_mask is not None:
             if head_mask.dim() == 1:
+                
                 head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+                #in above, head_mask is of size(num_heads) with only one dimension. After applying the sequnce of above unsequeeze operations, its size will
+                #be (1, 1, num_heads, 1, 1) where it is expected to be broadcasted to the size of
+                #(num_hidden_layers, batch_size, num_heads, seq_lenght, seq_lenght)
+                
                 head_mask = head_mask.expand(self.config.num_hidden_layers, -1, -1, -1, -1)
+                #before, the above exapnd operation, head_mask is of size (1, 1, num_heads, 1, 1) and after the above expand operation, the size of tensor
+                #becomes (num_hidden_layers, 1, num_heads, 1, 1). Such expansion is realized by copying (repeating) the tensor of size (1, num_heads, 1, 1)
+                #across the first dimension for num_hidden_layers times. 
+                #the main reason for such above expansion is that we want to be able to access head_mask for each layer seprately via a slicing operation
+                #like head_mask[layer_index]. Therefore, we need to expand this tensor across the first dimension for num_hidden_layers since we cannot
+                #rely on the broadcasting operation for this purpose. 
+                
             elif head_mask.dim() == 2:
+                
                 head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+                #if head_mask dimension is 2, it will be of size(num_hidden_layers, heads). Therefore, in order to changes is shape into a tensor
+                #of size(num_hidden_layers, batch_size, heads, seq_lenght, seq_length)
+                
             head_mask = head_mask.to(dtype=next(self.parameters()).dtype)  # switch to fload if need + fp16 compatibility
         else:
+            
             head_mask = [None] * self.config.num_hidden_layers
+            #the main purpose of such list comprehension for head_mask is that in each of the 12 BERT layer, a slicing operation of form
+            #head_mask[layer_index] in order to get access to the head_mask for that specific layer. 
 
         embedding_output = self.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds)
+        #emebedding_output will be a tensor of size(batch_size, seq_lenght, 768)
+        
         encoder_outputs = self.encoder(embedding_output,
                                        attention_mask=extended_attention_mask,
                                        head_mask=head_mask,
                                        encoder_hidden_states=encoder_hidden_states,
                                        encoder_attention_mask=encoder_extended_attention_mask)
+        
+        #encoder_outputs will be a tuple where its first element will be the ouput embeddings from the last layer of BERT encoder and it will of size
+        #(batch_size, seq_lenght, 768)
         sequence_output = encoder_outputs[0]
-        pooled_output = self.pooler(sequence_output)
 
+        
+        pooled_output = self.pooler(sequence_output)
+        #sequence_ouput is a tensor of size(batch_size, seq_lenght, 768) and pooled_ouput will be a tensor of size(batch_size, 768) where it will
+        #be a tranformed version of the emebedding vector of the first token of each sequence by being processed by a single layer fully connected layer
+        #of size 768 x 768, which have passed through a tanh activation fn. 
+        
         outputs = (sequence_output, pooled_output,) + encoder_outputs[1:]  # add hidden_states and attentions if they are here
+
+        #outputs[0] will be a tensor of size(batch_size, seq_lenght, 768), output[1] will be a tensor of size(batch_size, 768) and
+        #outputs[2:] will be all the layers hiddens states and attention probs if we have asked for them.
+        
         return outputs  # sequence_output, pooled_output, (hidden_states), (attentions)
 
 
