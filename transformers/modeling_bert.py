@@ -1189,19 +1189,38 @@ class BertModel(BertPreTrainedModel):
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
+        #here input_shape refers to (batch_size, seq_lenght)
+
         device = input_ids.device if input_ids is not None else inputs_embeds.device
 
+        #device refers to the device that either input_ids or input_embeds reside.
+
+
+        # ** what will happen if attention_mask is not provided as an argument of this fn?
+        #if that is the case, then the BERT encoder assumes that none of the attention scores need to be masked. 
+        
         if attention_mask is None:
             attention_mask = torch.ones(input_shape, device=device)
+            #in above, input_shape is a tensor of size(batch_size, seq_lenght)
+            
         if encoder_attention_mask is None:
             encoder_attention_mask = torch.ones(input_shape, device=device)
+            #here, eventhough, the BERT model is working in decoder mode, the attention scores are computed between
+            
         if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+            #toekn_types_ids will be a tensor of size(batch_size, seq_lenght) and all zero
 
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
         # ourselves in which case we just need to make it broadcastable to all heads.
         if attention_mask.dim() == 3:
             extended_attention_mask = attention_mask[:, None, :, :]
+            #extended_attenntion_mask is supposed to be a tensor of size(batch_size, 12, seq_lenght, seq_lenght). Howerver, if the dimension of
+            #the passed attention_mask to this forward method is (batch_size, seq_lenght, seq_lenght), it will be enough to broadcast the 2d attention
+            #matrix(seq_lenght, seq_lenght) across all the 12 heads. In order for attention_mask to be able to be broadcasted across all 12 heads,
+            #we need to insert a dimension of size 1 after the batch dimension, as representitive head dimension. Such dimension extension could be
+            #done using attention_mask[:, None, :, :] that changes the dimension of attention_mask from (batch_size, seq_length, seq_lenght) to
+            #(batch_size, 1, seq_lenght, seq_lenght)
 
         # Provided a padding mask of dimensions [batch_size, seq_length]
         # - if the model is a decoder, apply a causal mask in addition to the padding mask
@@ -1214,6 +1233,8 @@ class BertModel(BertPreTrainedModel):
                 extended_attention_mask = causal_mask[:, None, :, :] * attention_mask[:, None, None, :]
             else:
                 extended_attention_mask = attention_mask[:, None, None, :]
+                #if attention_mask is a tensor of size(batch_size, seq_lenght), then in order to be able to broadcast the attention mask
+                #
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
