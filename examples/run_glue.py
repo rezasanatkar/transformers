@@ -612,9 +612,9 @@ def main():
     #hidden_act: "gelu",
     #hidden_dropout_prob: 0.1,
     #hidden_size: 768,
-    #initializer_range: 0.02,
+    #initializer_range: 0.02, => std for initialization of the weights with normal distribution
     #intermediate_size: 3072,
-    #max_position_embeddings: 512, => this must tbe the context window
+    #max_position_embeddings: 512, => this must be the context window
     #num_attention_heads: 12,
     #num_hidden_layers: 12,
     #type_vocab_size: 2,
@@ -660,7 +660,7 @@ def main():
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
-    #in glue.sh task, we don't specify args.tokenizer_name, therefore, therefore, args.model_name_or_path that is equal to
+    #in glue.sh task, we don't specify args.tokenizer_name, therefore, args.model_name_or_path that is equal to
     #bert-base-uncased will be passed as the first argument to this method. The other arguement for this method is args.do_lower_case
     #which is enabled for glue.sh . The cache_dir option is not provided inside glue.sh which causes None to be passed instead.
     #This results in this method to rely on the default cache folder which is the following:
