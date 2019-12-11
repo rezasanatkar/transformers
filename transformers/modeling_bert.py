@@ -1705,13 +1705,51 @@ class BertForSequenceClassification(BertPreTrainedModel):
         
         
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        #hidden_dropout_prob is 0.1
+        
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
+        #the classifier head here will be fully-connected layer that takes input vector of dimension 768 and ouputs two class probabilities.
+        #Note that the input dimension of 768 makes sense since each input sequence only being represented by a single vector of dimension 768
+        #which is transformed version of the final output embedding corresponding to the first token of each sequence. The transformation of the
+        #output embedding of the first token of each sequence is a two-step process: (1) a fully-connected layer of size 768 x 768 (2) a tanh activation
+        #fn
+
+        # ** what does init_weights do?
+        #init_weights is a method of the parent class PreTrainedModel which is at modeling_utils.py. The init_weigths method of PreTrainedModel 
+        #will results in applying the _init_weights method of BertPreTrainedModel to each object derived from nn.Module, using apply method of
+        #nn.Module class. In other words, init_weights initialize the weights (tensors representing the parameters of nn.Module's) using
+        #_init_weight method of BertPreTrainedModel. Also, init_weights method of PreTrainedModel ensures that weight sharing occurs between
+        #vocab output embeddings and vocab input emebeddings if the BERT model's objective is language modeling like BertForPretraining and
+        #BertForMaskedLM.
+
+        # ** what initilization is used for wights of the BERT?
+        #normal distribution with mean zero and std 0.02 is used for all the weights and value of zero for all the bias values. The only exception
+        #of the above initilization is for LayerNorm. LayerNorm has two learnable parameters: gamma and beta. The normalized activations will be
+        #multiplied by gamma, and added by beta afterwards. The below init_weights method initilizes gamma with 1.0 and beta with 0.0
 
         self.init_weights()
 
     def forward(self, input_ids=None, attention_mask=None, token_type_ids=None,
                 position_ids=None, head_mask=None, inputs_embeds=None, labels=None):
 
+        #input_ids will be tensor of size(batch_size, seq_lengh)
+        
+        #attention_mask either could be None, which results in to not mask any input token, or it could be a tensor of size(batch_size, seq_lenght)
+        #where the actual tokens are denoted by entries of ones, and PAD tokens are denoted by entries of zeros. 
+
+        #token_type_ids either could be None, which results in assuming all tekens are type of zeros, or it could be a tensor of
+        #(batch_size, seq_lenght), where tokens of type zeros need to have their entries equal to zero, and tokens of type ones need to have their
+        #corresponding entries equal to one.
+
+        #position_ids either could be None, which results in BERT model internally create position_ids starting from 0 to seq_lenght - 1 for all the
+        #sequences of the batch, or you can provide a tensor of size(batch_size, seq_lenght) where position_ids[i,j] is supposed to refer to the
+        #positon of the jth token of ith sequence
+
+        #head_mask either could be None, which results in no head being masked, or it could be a tensor of size(num_heads) with 0s and 1s entries.
+        #0s entries denote those heads that their correponding 64 dimensional output vector will become all zeros and 1s denoted those heads that
+        #their generated output embedding won't get impacted. Also, you have the option to define such head masks for each layer separately that
+        #requires you to pass a tensor of size(num_layers, num_heads)
+        
         outputs = self.bert(input_ids,
                             attention_mask=attention_mask,
                             token_type_ids=token_type_ids,
@@ -1719,22 +1757,52 @@ class BertForSequenceClassification(BertPreTrainedModel):
                             head_mask=head_mask,
                             inputs_embeds=inputs_embeds)
 
+        #ouptus is a tuple
+
+        #ouptus[0] is a tensor of size(batch_size, seq_lenght, 768) that is the ouput embedding of the last layer of the BERT model
+
+        #output[1] is a tensor of size(batch_size, 768) which is a fully-connected layer 768 x 768 and tanh transformed version of the final output
+        #embedding corresponding to the first token of each sequence
+        
         pooled_output = outputs[1]
 
         pooled_output = self.dropout(pooled_output)
+        #pooled_output is a tensor of size(batch_size, 768)
+        
         logits = self.classifier(pooled_output)
+        #self.classifider is a fully-connected layer of size 768 x 2. Therefore, logits is a tensor of size(batch_size, 2)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
+
+            #in this code, the regression and classification tasks are distinguished via num_labels. If num_labels is 1, then the task is
+            #regression and we will use MSELoss, otherwise, the task is classification and we will use CrossEntropyLoss. 
+            
             if self.num_labels == 1:
                 #  We are doing regression
                 loss_fct = MSELoss()
+                
                 loss = loss_fct(logits.view(-1), labels.view(-1))
+                #in above, the assumption is that logits is a one-dimensioanl tensor of size(batch_size) and labels is also one-dimensioanl tensor
+                #of real numbers of size(batch_size), and this loss compute their squared differences. the reshape operation view(-1) doesn't impact
+                #these two tensors since they are already one-dimensioanl
+                
             else:
                 loss_fct = CrossEntropyLoss()
+                
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                #here, logits is a tensor of size(batch_size, 2) and the above view operation doesn't impact logits tensor. labels is a tensor of
+                #size(batch_size) where each entry could be either 0 referring to lablel 0, or 1 referring to label 1. Since lables is already
+                #a tensor of size(batch_size), the above view(-1) operation doesn't impact labels.
+
+                #also, CrossEntropyLoss expects to always get logits tensor(batch_size, num_classes) and labels tensor(batch_size) where each
+                #entry of lablels could be an integer in the range 0, 1, ..., num_classes - 1
+                
             outputs = (loss,) + outputs
+
+            #the first element of tuple outputs is loss which is scalar tensor, the second element is logits which is a tensor of
+            #size (batch_size, num_classes)
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
