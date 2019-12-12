@@ -986,8 +986,13 @@ class PreTrainedTokenizer(object):
                 tokens and 1 specifying sequence tokens.
         """
         pair = bool(pair_ids is not None)
+        #pair will be True for mrpc
+        
         len_ids = len(ids)
+        #len_ids will be the length of text_a
+        
         len_pair_ids = len(pair_ids) if pair else 0
+        #len_pair_ids will be the length of text_b
 
         encoded_inputs = {}
 
