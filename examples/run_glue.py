@@ -74,11 +74,12 @@ from transformers import glue_output_modes as output_modes
 
 from transformers import glue_processors as processors
 #glue_processors is defined at transformers/data/processors/glue.py
-#glue_processors is a python dict with string key name of taks and values being processor classes that are able to read the train and dev datasets of
+#glue_processors is a python dict with string key name of tasks and values being processor classes that are able to read the train and dev datasets of
 #those tasks and restun python lists of train and dev InputExample
 
 
 from transformers import glue_convert_examples_to_features as convert_examples_to_features
+#glue_convert_examples_to_features is defined at transformers/data/processors/glue.py
 
 logger = logging.getLogger(__name__)
 
@@ -298,35 +299,66 @@ def evaluate(args, model, tokenizer, prefix=""):
 
 
 def load_and_cache_examples(args, task, tokenizer, evaluate=False):
+    #task is mrpc and tokenizer is instance of BertTokenizer that internally loads the vocab for bert-base-uncased
+    
+    #for the standard glue script, local_rank is always -1
     if args.local_rank not in [-1, 0] and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     processor = processors[task]()
+    #here, processor will be an object of transformers.data.processors.glue.MrpcProcessor which is defined at transformers/data/processors/glue.py
+    #this object is able to read the train and dev dataset of MRPS and restun python lists of train and dev InputExample
+
     output_mode = output_modes[task]
+    #output_mode will be  "classification" for MRPC
+
+    
     # Load data features from cache or dataset file
+
+    #args.data_dir is glue_data/MRPC which is passed as argument to glue.sh
     cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
         'dev' if evaluate else 'train',
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
         str(task)))
+
+    #cached_features_file for bert-base-uncased and MRPC will be cached_train_bert-base-uncased_128_mrpc
+    
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        #for the first time that you execute this script, this feature file for mrpc based on the tokenizr of bert-base-uncased doesn't exist
+        
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
+
         label_list = processor.get_labels()
+        #label_list for MRPC is ['0', '1']
+        
         if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
-            label_list[1], label_list[2] = label_list[2], label_list[1] 
+            label_list[1], label_list[2] = label_list[2], label_list[1]
+
+            
         examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
-        features = convert_examples_to_features(examples,
-                                                tokenizer,
-                                                label_list=label_list,
-                                                max_length=args.max_seq_length,
-                                                output_mode=output_mode,
-                                                pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
+        #examples is a list of transformers.data.processors.utils.InputExample
+        #the first example is the following:
+        #{
+        #  "guid": "train-1",
+        #  "label": "1",
+        #  "text_a": "Amrozi accused his brother , whom he called \" the witness \" , of deliberately distorting his evidence .",
+        #  "text_b": "Referring to him as only \" the witness \" , Amrozi accused his brother of deliberately distorting his evidence ."
+        #}
+        
+        features = convert_examples_to_features(examples,# a list of InputExample
+                                                tokenizer, #an instance of BertTokenizer
+                                                label_list=label_list, #it is ['0', '1']
+                                                max_length=args.max_seq_length, #this is 128 for MRPS eventhough for BERT is 512
+                                                output_mode=output_mode, #output_mode is 'classification'
+                                                pad_on_left=bool(args.model_type in ['xlnet']), # pad on the left for xlnet => False for BERT
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
+                                                #for bert pad_token is '[PAD]' and convert_tokens_to_ids will return the vocab index for the token '[PAD]'
+                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,#so, it will be zero
         )
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
@@ -684,17 +716,31 @@ def main():
     #the config arguments is a config object that describes the architecture of bert-base-uncased like the activation type,
     #number of attention-block layers, number of attention heads, hidden size, fine-tunning task, ...
 
+    # ** what does from_pretrained perform?
+    #it is a static method of PreTrainedModel in modeling_utils.py which instantiates an object of the child class (for this example,
+    #BertForSequenceClassification) and initilize its weights from a pretrained checkpoint that either was already cached or downloaded from S3.
+    #Note that not all the layers of BertForSequenceClassification is initialized from this checkpoint. In particular, the fully-connected single
+    #layer head that does the binary classification of the pooled embedding is not initialized. Also, another significant point is that this
+    #returned model is in eval mode which means that dropout layers are not active. 
+
+    #in glue standard script, local_rank as one of the arguements is not specified which will be backoff-ed to -1.
+    #in particualr, the existing script relies on DataParallel which will be distributed training with single machine and several gpus training. This
+    #option happens when local_rank is equal to -1
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
+    #args.device will be equal to cpu for laptop and cuda:0 for linux machine
     model.to(args.device)
 
     logger.info("Training/evaluation parameters %s", args)
 
 
     # Training
+    #args.do_train is enabled in script glue.sh for mrpc based on bert-base-uncased
     if args.do_train:
         train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
+        #args.task_name is mrpc, tokenizer is instance of BertTokenizer
+        
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 

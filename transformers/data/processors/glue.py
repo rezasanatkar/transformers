@@ -36,6 +36,16 @@ def glue_convert_examples_to_features(examples, tokenizer,
                                       pad_token=0,
                                       pad_token_segment_id=0,
                                       mask_padding_with_zero=True):
+    #examples is a list of InputExample
+    #max_lenght for MRPC is 128
+    #taks is mrpc
+    #label_list is ['0', '1']
+    #output_mode is 'classification'
+    #pad_on_left is False
+    #pad_token is 0
+    #pad_token_segment_id is 0
+    #mask_padding_with_zero is True
+    
     """
     Loads a data file into a list of ``InputFeatures``
 
