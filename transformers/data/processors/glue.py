@@ -37,6 +37,7 @@ def glue_convert_examples_to_features(examples, tokenizer,
                                       pad_token_segment_id=0,
                                       mask_padding_with_zero=True):
     #examples is a list of InputExample
+    #tokenizer is an instance of BertTokenizer
     #max_lenght for MRPC is 128
     #taks is mrpc
     #label_list is ['0', '1']
@@ -72,23 +73,35 @@ def glue_convert_examples_to_features(examples, tokenizer,
     is_tf_dataset = False
     if is_tf_available() and isinstance(examples, tf.data.Dataset):
         is_tf_dataset = True
-
-    if task is not None:
+    #for bert-base-uncased, examples is a list of InputExample. Therefore, is_tf_dataset will be False
+        
+    if task is not None: #task is mrpc
         processor = glue_processors[task]()
+        #the procssoer will be an object of MRPCProcessor
+        
         if label_list is None:
             label_list = processor.get_labels()
             logger.info("Using label list %s for task %s" % (label_list, task))
+
+        #label_list will be ['0', '1']
+        
         if output_mode is None:
             output_mode = glue_output_modes[task]
             logger.info("Using output mode %s for task %s" % (output_mode, task))
 
+        #output_mode will be 'classification'
+        
+
     label_map = {label: i for i, label in enumerate(label_list)}
 
+    #label_map for mrpc task will be {'0': 0, '1': 1}
+    
     features = []
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             logger.info("Writing example %d" % (ex_index))
-        if is_tf_dataset:
+            
+        if is_tf_dataset: #this is False for MRPC
             example = processor.get_example_from_tensor_dict(example)
             example = processor.tfds_map(example)
 

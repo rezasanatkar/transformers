@@ -209,7 +209,7 @@ class PreTrainedTokenizer(object):
         return self.convert_tokens_to_ids(self.additional_special_tokens)
 
     def __init__(self, max_len=None, **kwargs):
-        #max_lem passed for bert-base-uncased is 512 and kwargs is the followings:
+        #max_len passed for bert-base-uncased is 512 and kwargs is the followings:
         #{'unk_token': '[UNK]', 'sep_token': '[SEP]', 'pad_token': '[PAD]', 'cls_token': '[CLS]', 'mask_token': '[MASK]'}
         self._bos_token = None
         self._eos_token = None
@@ -773,9 +773,13 @@ class PreTrainedTokenizer(object):
     def _convert_token_to_id_with_added_voc(self, token):
         if token is None:
             return None
-
+        #self.added_tokens_encoder is empty {} for bert-base-uncased and mrpc task
         if token in self.added_tokens_encoder:
             return self.added_tokens_encoder[token]
+
+
+        #the _convert_token_to_id is implemented at tokenization_bert.py which simply returns the vocab id of the token if it is part of token and
+        #otherwise will return the special unknown token
         return self._convert_token_to_id(token)
 
     def _convert_token_to_id(self, token):
@@ -830,10 +834,10 @@ class PreTrainedTokenizer(object):
         return encoded_inputs["input_ids"]
 
     def encode_plus(self,
-                    text,
-                    text_pair=None,
+                    text,#exampl.text_a
+                    text_pair=None,#example.text_b
                     add_special_tokens=True,
-                    max_length=None,
+                    max_length=None, #for MRPC, max_length is 120
                     stride=0,
                     truncation_strategy='longest_first',
                     return_tensors=None,
@@ -893,24 +897,35 @@ class PreTrainedTokenizer(object):
         """
 
         def get_input_ids(text):
+            #six is a library that tries to address the differences between Python 2 and Python 3
             if isinstance(text, six.string_types):
+                #here, if text is actually a text either for Python 2 or Python 3, this branch will be hit. For mrpc, we always come to this branch
+
+                #self.covert_tokens_to_ids uses a method of BertTokenizer to return the ids corresponding to the tokenized tokens returned by
+                #self.tokenize method. In other words, the return object of this method will be a list of vocab ids of the tokenized version of
+                #the input text.
+
+                #also, the below self.tokenize will hit the BertTokenizer's tokenize method that implement the left-greedy longest matching
+                #note that this class also has tokenize method but will be overrriden by BertTokenization class
                 return self.convert_tokens_to_ids(self.tokenize(text, **kwargs))
+            
             elif isinstance(text, (list, tuple)) and len(text) > 0 and isinstance(text[0], six.string_types):
                 return self.convert_tokens_to_ids(text)
             elif isinstance(text, (list, tuple)) and len(text) > 0 and isinstance(text[0], int):
                 return text
             else:
                 raise ValueError("Input is not valid. Should be a string, a list/tuple of strings or a list/tuple of integers.")
-
+        
         first_ids = get_input_ids(text)
         second_ids = get_input_ids(text_pair) if text_pair is not None else None
+        #in above, first_ids and second_ids will be list of vocab ids of these two senteces based on the vocab of each of these pretrained models
 
         return self.prepare_for_model(first_ids,
                                       pair_ids=second_ids,
-                                      max_length=max_length,
-                                      add_special_tokens=add_special_tokens,
-                                      stride=stride,
-                                      truncation_strategy=truncation_strategy,
+                                      max_length=max_length, #128
+                                      add_special_tokens=add_special_tokens,#True
+                                      stride=stride,#0
+                                      truncation_strategy=truncation_strategy,#longest_first
                                       return_tensors=return_tensors,
                                       return_token_type_ids=return_token_type_ids,
                                       return_overflowing_tokens=return_overflowing_tokens,
@@ -919,9 +934,9 @@ class PreTrainedTokenizer(object):
     def prepare_for_model(self, ids, pair_ids=None, max_length=None, add_special_tokens=True, stride=0,
                           truncation_strategy='longest_first',
                           return_tensors=None,
-                          return_token_type_ids=True,
-                          return_overflowing_tokens=False,
-                          return_special_tokens_mask=False):
+                          return_token_type_ids=True,#True
+                          return_overflowing_tokens=False,#False
+                          return_special_tokens_mask=False):#False
         """
         Prepares a sequence of input id, or a pair of sequences of inputs ids so that it can be used by the model.
         It adds special tokens, truncates
