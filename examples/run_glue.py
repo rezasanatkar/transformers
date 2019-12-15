@@ -360,23 +360,43 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
                                                 #for bert pad_token is '[PAD]' and convert_tokens_to_ids will return the vocab index for the token '[PAD]'
                                                 pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,#so, it will be zero
         )
+
+        #features will be a list of InputFeatures that is defined at transformers/transformers/data/processors/utils.py and is a class with
+        #the following fields: input_ids, attention_mask, token_type_ids and label, where input_ids is a list vocab indices that is padded with 0 to
+        #have the length of 128, attention_mask is also a list of length 128 with the entries 1 for non-pad tokens and entries 0 for pad tokens,
+        #token_type_ids will be also a list of length 128 with the format [0 0 0 .... 0 1 1 1 ... 1 0 0 . . . 0] where the first 0 entries are corresponding
+        #[cls] text_a [sep] and 1 entries are corresponding to text_b [sep] and the final 0 entries are corresponding to pad tokens. label also could be
+        #either 0 or 1. 
+
+        #for glue standard example. local_rank will be -1. This means that we will be saving the generated features list 
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
 
-    if args.local_rank == 0 and not evaluate:
+    if args.local_rank == 0 and not evaluate: #not True for bert mrpc
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Convert to Tensors and build dataset
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    #all_input_ids will be a 2 dimensional tensor of size [3668, 128]
+
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    #all_attention_mask will be a 2 dimensional tensor of size [3668, 128]
+    
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-    if output_mode == "classification":
+    #all_token_type_ids will be a 2 dimensional tensor of size [3668, 128]
+    
+    if output_mode == "classification": #bert mrps is classification
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+        #all_labels will be a 1 dimensional tensor of size [3668]
+        
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
  
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    #TensorDataset is a standard torch dataset from torch.utils.data which takes a number of tensors as above assuming all of them have same size
+    #first dimention (batch dimension) and each example will be retrieved by indexing tensors along the first dimension.
+    
     return dataset
 
 
@@ -740,6 +760,11 @@ def main():
     if args.do_train:
         train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
         #args.task_name is mrpc, tokenizer is instance of BertTokenizer
+
+        #in above train_dataset will be TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels) where
+        #all_input_ids, all_attention_mask, all_token_type_ids are 2-dimensioanl tensors of size [3668, 128] and all_lables is a one dimensional tensor
+        #of size [3668]. TensorDataset is a standard torch dataset from torch.utils.data and each example is retrieved by indexing tensors along
+        #their first dimensions
         
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)

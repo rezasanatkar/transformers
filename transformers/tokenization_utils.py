@@ -620,6 +620,13 @@ class PreTrainedTokenizer(object):
         return len(to_add_tokens)
 
     def num_added_tokens(self, pair=False):
+        #the goal of this method is to determine the number of added special tokens if we use this tokenizer to encode sentences.
+        #the PreTrainedTokenizer by default does not add any special tokens to the senteces using its own build_inputs_with_special_tokens.
+        #therefore, the tokenizer that is derived from the PreTrainedTokenizer needs to override builds_input_with_special_tokens.
+        #for example, BertTokenizer override build_inputs_with_special_tokens in order to add the following special tokens to input sequences:
+        #single sequence: [CLS] X [SEP] , where X is a single sequence
+        #pair of sequences: [CLS] A [SEP] B [SEP] , where (A, B) is a pair of sequences
+
         """
         Returns the number of added tokens when encoding a sequence with special tokens.
 
@@ -634,8 +641,12 @@ class PreTrainedTokenizer(object):
         Returns:
             Number of tokens added to sequences
         """
+        #both token_ids_0 and token_ids_1 are set to be empty list, so that the length of the returned encoded pair of sequnce only refers to the number
+        #of added special tokens.
         token_ids_0 = []
         token_ids_1 = []
+
+        #BertTokenizer overrides build_inputs_with_special_tokens from PreTrainedTokenizer
         return len(self.build_inputs_with_special_tokens(token_ids_0, token_ids_1 if pair else None))
 
     def add_special_tokens(self, special_tokens_dict):
@@ -920,6 +931,9 @@ class PreTrainedTokenizer(object):
         second_ids = get_input_ids(text_pair) if text_pair is not None else None
         #in above, first_ids and second_ids will be list of vocab ids of these two senteces based on the vocab of each of these pretrained models
 
+        #the return object from prepare_for_model will be a python dict with two keys "input_ids" and "token_type_ids" where input_ids will be 
+        #a list of vocab indices of the input which is a concanted version of the pair of sequence with the format [cls] text_a [sep] text_b [sep] and
+        #token_type_ids will be [0 0 0 ... 0 1 1 ... 1] where [cls] text_a [sep] are assigned type 0 and text_b [sep] are assigned type 1
         return self.prepare_for_model(first_ids,
                                       pair_ids=second_ids,
                                       max_length=max_length, #128
@@ -931,7 +945,7 @@ class PreTrainedTokenizer(object):
                                       return_overflowing_tokens=return_overflowing_tokens,
                                       return_special_tokens_mask=return_special_tokens_mask)
 
-    def prepare_for_model(self, ids, pair_ids=None, max_length=None, add_special_tokens=True, stride=0,
+    def prepare_for_model(self, ids, pair_ids=None, max_length=None, add_special_tokens=True, stride=0,#max_len is 128
                           truncation_strategy='longest_first',
                           return_tensors=None,
                           return_token_type_ids=True,#True
@@ -997,29 +1011,60 @@ class PreTrainedTokenizer(object):
         encoded_inputs = {}
 
         # Handle max sequence length
-        total_len = len_ids + len_pair_ids + (self.num_added_tokens(pair=pair) if add_special_tokens else 0)
-        if max_length and total_len > max_length:
-            ids, pair_ids, overflowing_tokens = self.truncate_sequences(ids, pair_ids=pair_ids,
+        #below pair and add_special_tokens are True
+        total_len = len_ids + len_pair_ids + (self.num_added_tokens(pair=pair) if add_special_tokens else 0) 
+        #in above, num_added_tokens refers to the number of added special tokens. For BertTokenizer for pair of sequence classification, the number of
+        #added special tokens is equal to 3 since a special token [CLS] is added at the begining of text_a, and special token [SEP] is added between
+        #the pair of sequences as well as the end of text_b
+        
+        if max_length and total_len > max_length: #max_len is 128 for MRPC task
+            ids, pair_ids, overflowing_tokens = self.truncate_sequences(ids, pair_ids=pair_ids,#ids => text_a, pair_ids => text_b
                                                                         num_tokens_to_remove=total_len-max_length,
-                                                                        truncation_strategy=truncation_strategy,
-                                                                        stride=stride)
-            if return_overflowing_tokens:
+                                                                        truncation_strategy=truncation_strategy,#longest_first
+                                                                        stride=stride)#strid is zero
+            
+            #BertTokenizer doesn't override PreTrainedTokenizer's truncate_sequence
+            
+            if return_overflowing_tokens:#this is False for bert mrpc case
                 encoded_inputs["overflowing_tokens"] = overflowing_tokens
                 encoded_inputs["num_truncated_tokens"] = total_len - max_length
 
         # Handle special_tokens
-        if add_special_tokens:
+        if add_special_tokens:#add_special_tokens is True for bert mrpc
             sequence = self.build_inputs_with_special_tokens(ids, pair_ids)
+            #BertTokenizer overrides build_inputs_with_special_tokens method of PreTrainedTokenizer. In particular, BertTokenizer add special tokens
+            #as follows:
+            #A BERT sequence has the following format:
+            #single sequence: [CLS] X [SEP]
+            #pair of sequences: [CLS] A [SEP] B [SEP]
+
+            #sequence will be a list of vocab indices
+
+            # ** what is the purpose of token_type_ids?
+            #for the task of sequencce pair classification, their purpose is to determince whehter a token belongs to text_a (the first sequence), or
+            #text_b (the second sequence). Therefore, BertTokenizer overrides create_token_type_ids_from_sequences, and assigns token_type of 0 for
+            #tokens in text_a as well as token_type 0 for [cls] and [sep] specical tokens that surround text_a, and token_type 1 for tokens in text_b
+            #as well as the special token [sep] that is appended at the end of text_b. Therefore, token_type_ids will be a list as follow:
+            #[0 0 0 0 0 0 ... 0 0 1 1 1 ... 1 1 1 1 1]
+            
             token_type_ids = self.create_token_type_ids_from_sequences(ids, pair_ids)
+
+            # ** what is the purpose of special_tokens_mask?
+            #it is a list as same length as token_type_ids with this difference that 0 entries denote non-sepcial tokens and 1 entries denotes the specical
+            #tokens. BertTokenizer overrides get_special_tokens_mask and will return a list like [1 0 0 0 ...  0 0 1 0 0 0 0 .... 0 0 1], where the first
+            #1 entry refers to the special token [cls] and the third and forth 1 entries refer to [sep] special token. 
+            
             special_tokens_mask = self.get_special_tokens_mask(ids, pair_ids)
+            
         else:
             sequence = ids + pair_ids if pair else ids
             token_type_ids = [0] * len(ids) + ([1] * len(pair_ids) if pair else [])
             special_tokens_mask = [0] * (len(ids) + (len(pair_ids) if pair else 0))
-        if return_special_tokens_mask:
+            
+        if return_special_tokens_mask:#this is false for bert mrpc
             encoded_inputs["special_tokens_mask"] = self.get_special_tokens_mask(ids, pair_ids)
 
-        # Prepare inputs as tensors if asked
+        # Prepare inputs as tensors if asked => for bert mrpc return_tensors is None
         if return_tensors == 'tf' and is_tf_available():
             sequence = tf.constant([sequence])
             token_type_ids = tf.constant([token_type_ids])
@@ -1029,18 +1074,21 @@ class PreTrainedTokenizer(object):
         elif return_tensors is not None:
             logger.warning("Unable to convert output to tensors format {}, PyTorch or TensorFlow is not available.".format(return_tensors))
 
+        #encoded_inputs is {}
         encoded_inputs["input_ids"] = sequence
-        if return_token_type_ids:
+        
+        
+        if return_token_type_ids:#this is True for bert mrpc
             encoded_inputs["token_type_ids"] = token_type_ids
 
-        if max_length and len(encoded_inputs["input_ids"]) > max_length:
+        if max_length and len(encoded_inputs["input_ids"]) > max_length: #max_length is 128 for bert mrpc
             encoded_inputs["input_ids"] = encoded_inputs["input_ids"][:max_length]
             if return_token_type_ids:
                 encoded_inputs["token_type_ids"] = encoded_inputs["token_type_ids"][:max_length]
             if return_special_tokens_mask:
                 encoded_inputs["special_tokens_mask"] = encoded_inputs["special_tokens_mask"][:max_length]
 
-        if max_length is None and len(encoded_inputs["input_ids"]) > self.max_len:
+        if max_length is None and len(encoded_inputs["input_ids"]) > self.max_len: #self.max_len for bert-base-uncased is 512 :)
             logger.warning("Token indices sequence length is longer than the specified maximum sequence length "
                            "for this model ({} > {}). Running this sequence through the model will result in "
                            "indexing errors".format(len(ids), self.max_len))
@@ -1048,6 +1096,13 @@ class PreTrainedTokenizer(object):
         return encoded_inputs
 
     def truncate_sequences(self, ids, pair_ids=None, num_tokens_to_remove=0, truncation_strategy='longest_first', stride=0):
+        #ids => text_a
+        #pair_ids => text_b
+        #truncation_strategy => longest_first => this means that for a pair of sequencces, strart truncating from the longest sequence
+        #stride => 0
+
+        #BertTokenizer doesn't override truncate_sequences
+        
         """Truncates a sequence pair in place to the maximum length.
             truncation_strategy: string selected in the following options:
                 - 'longest_first' (default) Iteratively reduce the inputs sequence until the input is under max_length
@@ -1061,16 +1116,23 @@ class PreTrainedTokenizer(object):
             return ids, pair_ids, []
 
         if truncation_strategy == 'longest_first':
+            #this is the chosen option for bert mrpc case
             overflowing_tokens = []
+            #overflowing_tokens will be those tokens that will be truncated
+            
             for _ in range(num_tokens_to_remove):
                 if pair_ids is None or len(ids) > len(pair_ids):
                     overflowing_tokens = [ids[-1]] + overflowing_tokens
                     ids = ids[:-1]
                 else:
                     pair_ids = pair_ids[:-1]
+                    
             window_len = min(len(ids), stride)
+            #for bert mrpc task, stride is 0, therefore, window_len also will be 0
+            
             if window_len > 0:
                 overflowing_tokens = ids[-window_len:] + overflowing_tokens
+                
         elif truncation_strategy == 'only_first':
             assert len(ids) > num_tokens_to_remove
             window_len = min(len(ids), stride + num_tokens_to_remove)
@@ -1085,6 +1147,9 @@ class PreTrainedTokenizer(object):
             raise ValueError("Input sequence are too long for max_length. Please select a truncation strategy.")
         else:
             raise ValueError("Truncation_strategy should be selected in ['longest_first', 'only_first', 'only_second', 'do_not_truncate']")
+
+        #ids and pair_ids will have the length such that with special tokens, the total length will be less than max_len
+        #overflowing_tokens are those tokens that truncated
         return (ids, pair_ids, overflowing_tokens)
 
     def create_token_type_ids_from_sequences(self, token_ids_0, token_ids_1=None):

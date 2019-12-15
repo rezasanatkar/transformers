@@ -105,6 +105,9 @@ def glue_convert_examples_to_features(examples, tokenizer,
             example = processor.get_example_from_tensor_dict(example)
             example = processor.tfds_map(example)
 
+        #encode_plus is defined for PretTrainedTokenizer at tokenization_utils.py. This method returns a python dict with two keys "input_ids" and
+        #"token_type_ids" where "input_ids" is a list of vocab indices in the format of [cls] text_a [sep] text_b [sep] and "token_type_ids" will
+        #be a list of [0 0 0 ... 0 1 1 ... 1] where [cls] text_a [sep] are assigned type 0 and text_b [sep] are assigned type 1.
         inputs = tokenizer.encode_plus(
             example.text_a,
             example.text_b,
@@ -115,25 +118,41 @@ def glue_convert_examples_to_features(examples, tokenizer,
 
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
+
+        #mask_padding_with_zero is True for bert mrpc
         attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+        #in above, input_ids doesn't contains any [pad] token. Therefore, it makes sense to attend to all of them. That is the reason we have
+        #attention_maks = [1] * len(input_ids)
 
         # Zero-pad up to the sequence length.
         padding_length = max_length - len(input_ids)
-        if pad_on_left:
+        #max_lenght for bert mrpc is 128 and in above, we want to pad all the tokens to have the length of 128. Note that inside encode_plus
+        #if a sequnce was longer than max_length, it is already truncated.
+        
+        if pad_on_left:#for bert mrpc this is False
             input_ids = ([pad_token] * padding_length) + input_ids
             attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
             token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
         else:
             input_ids = input_ids + ([pad_token] * padding_length)
+            #in above, we pad all the sequences to have the same lenght of 128
+            
             attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-            token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+            #attention_mask will be of format [1 1 1 1 ... 1 1 0 0 0 0 ... 0] where 1 entries denote non-pad tokens and 0 entries denote pad tokens
+            
+            token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length) #for bert mrpc, pad_token_segment_id is 0
+            #token_type_ids will be [0 0 0 0 ... 0 0 1 1 1 .. 1 1 0 0 ... 0] where the first 0 entries denote text_a and 1 entries denote text_b, and
+            #the final 0 entries denote pad tokens
 
         assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
         assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(len(attention_mask), max_length)
         assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(len(token_type_ids), max_length)
 
+        #for bert mrpc, output_mode is classification
         if output_mode == "classification":
             label = label_map[example.label]
+            #for mrpc, label_map is {"0": 0, "1": 1}
+            
         elif output_mode == "regression":
             label = float(example.label)
         else:
@@ -152,8 +171,11 @@ def glue_convert_examples_to_features(examples, tokenizer,
                               attention_mask=attention_mask,
                               token_type_ids=token_type_ids,
                               label=label))
+        
+        #InputFeatures is defined at utils.py and has the above internal fields
+        
 
-    if is_tf_available() and is_tf_dataset:
+    if is_tf_available() and is_tf_dataset:#this is false for bert mrpc
         def gen():
             for ex in features:
                 yield  ({'input_ids': ex.input_ids,
