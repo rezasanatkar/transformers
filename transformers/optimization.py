@@ -51,6 +51,7 @@ def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_st
             return float(current_step) / float(max(1, num_warmup_steps))
         return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
 
+    #LambdaLR is a class of torch.optim.lr_scheduler
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 
@@ -85,6 +86,7 @@ def get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_ste
 
 
 class AdamW(Optimizer):
+    #Optimizer is torch.optim.Optimizer class
     """ Implements Adam algorithm with weight decay fix.
 
     Parameters:
@@ -95,6 +97,10 @@ class AdamW(Optimizer):
         correct_bias (bool): can be set to False to avoid correcting bias in Adam (e.g. like in Bert TF repository). Default True.
     """
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0.0, correct_bias=True):
+        #lr is equal to 2e-5 and eps is equal to 1e-8
+        #params is a list of two dicts where they partition the parameters of the BERT into two groups of params with weight decay of 0.0 and weight
+        #decay of args.weight_decay which for glue is equal to 0.0 as well. Each of these two dicts has two keys of 'params' and 'weight_decay'
+        #the other arguments will be their default values. 
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
         if not 0.0 <= betas[0] < 1.0:

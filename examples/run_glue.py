@@ -54,8 +54,11 @@ from transformers import (WEIGHTS_NAME, BertConfig,
                                 )
 
 from transformers import AdamW, get_linear_schedule_with_warmup
+#AdamW and get_linear_schedule_with_warmup are defined at optimization.py
 
 from transformers import glue_compute_metrics as compute_metrics
+#glue_compute_metrics is defined at transformers/data/metrics/__ini__.py
+
 from transformers import glue_output_modes as output_modes
 #glue_output_modes is defined at transformers/data/processors/glue.py and is the following:
 #glue_output_modes = {
@@ -97,37 +100,91 @@ MODEL_CLASSES = {
 
 
 def set_seed(args):
+    #args.seed is not set for glue script and it will be defaulted to its default value of 42.
+    
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    #in above, we set the seed values for the three potential modules that rely on random generators
+    
     if args.n_gpu > 0:
+        #for linux machine, n_gpu will be equal to 2 and for mac, it will be equal to 0. 
         torch.cuda.manual_seed_all(args.seed)
 
 
 def train(args, train_dataset, model, tokenizer):
+    #train_dataset is TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels).
+    #model is an instance of BertForSequenceClassification
+    #tokenizer is an instance of BertTokenizer. Note that the tokenizer is already used to create train_dataset and therefore, it won't be used to create
+    #train data, but it will be passed to the evaluation job.
+    
     """ Train the model """
+    #for glue script, local_rank is -1
     if args.local_rank in [-1, 0]:
+        #SummaryWriter is the summary writer for tensorboard
         tb_writer = SummaryWriter()
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+    #in glue script, per_gpu_train_batch_size is set to 8.
+    #for the linux machine, args.n_gpu will be 2. Therefore, for mac, args.train_batch_size will be equal to 8 and for linux machine,
+    #args.train_batch_size will be equal to 16.
 
-    if args.max_steps > 0:
+    #for glue script, local_rank is equal to -1
+    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
+    #RandomSampler is part of torch.utils.data which takes an object of torch.utils.data.Dataset and return a shuffled Dataset version of it.
+    #DistributedSampler is used for distributed sampling as part of DistributedDataParallel
+    
+    
+    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+    #args.trin_batch_size will be 8 for mac and 16 for linux machine
+
+    # ** why use of sampler instead of shuffle = True for the above DataLoader?
+    #in the case of cpu trainig or single-machine multi-gpu training using DataParallel, it seems that using sampler=train_sampler is equivalent with
+    #shuffle = True. However, for multi-machine multi-gpu training using DistributedDataParallel, we cannot use shuffle = True and we need to use
+    #DistributedSampler. That is the reason, we cannot use shuffle = True in above. 
+    
+    if args.max_steps > 0:#max_steps is not set in glue script and it will back-off to its -1 default value
         t_total = args.max_steps
         args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
     else:
+        #this if for bert mrpc
         t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+        #for mrpc, len(train_dataloader) is equal to 459 which makes sense since the number of mrpc training sequences is equal to 3668 and batch size is
+        #equal to 8. Therefore, 459 * 8 = 3672.
+        #for bert mrpc, gradient_accumulation_steps is equal to 1 and num_train_epochs is equal to 3.0
+
+    # ** what the method named_parameters() return?
+    #it returns python generater of tuples (parameter_name (str), torch.nn.parameter.Parameter) for each paramter of the model. Therefore, it is different
+    #from the parameters() method that only returns a list of torch.nn.parameter.Parameter objects.
 
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        #for glue, args.weight_decay is equal to 0.0
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
 
+    # ** what is the objective of optimizer_grouped_parameters?
+    #the mian objective it to partition the parameters (learnable paramters of the model) into two groups such that for the first group weight_decay
+    #regularization is used but for the second groupd weight_decay regularization is not applied. In particular, they don't want to use weight_decay
+    #regularization for all the bias weights as well as the alpha parameters of LayerNorms.
+
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    #AdamW is defined at optimization.py. learning_rate is equla to 2e-5 and adam_epsilon is equal to 1e-8
+    #AdamW implements Adam optimizer with the weight decay fix. This fix ensures that the weight decay is uncoupled from the running statistics of
+    #Adam so that weight decay will not be scaled according to the running statistics of Adam. 
+    
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
+    #get_linear_schedule_with_warmup is implemented at optimization.py
+    #for glue bert mrpc, args.warmup_steps is set to zero and t_total is equal to 459 * 3 where 3 is num_train_epochs and 459 is the number of minibatches
+    #of size 8 for mrpc dataset. The total number of sequences in mrpc traning dataset is 3672 = 459 * 8
+
+    # ** what returns by get_linear_schedule_with_warmup?
+    #it increases the learning rate linearly from 0 to lr over the steps [0, warmup_steps] and then deacrease the learning rate from lr to 0 over the
+    #steps [warmup_steps, num_training_steps]
+
+    #args.fp16 is False for bert glue script.
     if args.fp16:
         try:
             from apex import amp
@@ -136,10 +193,12 @@ def train(args, train_dataset, model, tokenizer):
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
 
     # multi-gpu training (should be after apex fp16 initialization)
+    # for linux machine, n_gpu will be equal to 2 and for mac, it will be equal to 0
     if args.n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
     # Distributed training (should be after apex fp16 initialization)
+    #for glue birt mrpc script, local_rank is equal to -1
     if args.local_rank != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
                                                           output_device=args.local_rank,
@@ -148,71 +207,165 @@ def train(args, train_dataset, model, tokenizer):
     # Train!
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
+    #train_dataset is an instance of TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels) and its length is equal to the
+    #number of sequences in train dataset of mrpc which is equal to 3672.
+    
     logger.info("  Num Epochs = %d", args.num_train_epochs)
+    #num_train_epochs is equal to 3 for glue script
+    
     logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
+    #per_gpu_train_batch_size is equal to 8
+    
     logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
                    args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
+    #the above will be equal to 8 since local_rank is -1 and gradient_accumulation_steps is equal to 1
+
+    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps) #this is equal to 1
+    
     logger.info("  Total optimization steps = %d", t_total)
+    #t_total is equal to 459 * 3 where 3 is num_train_epochs and 459 is the number of minibatches of size 8 for mrpc dataset
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
+    #the tensor buffers associated with gradient being computed in backprob are accumulative and are not being cleared each time that the gradients are
+    #computed per each minibatch. In particular, if you don't set these tensor buffers to be zero using zero_grad method of nn.Module, the gradients are
+    #being accumulated (added) over and over. 
+    
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
+    #trange is being imported from tdqm. trange(10) is equivalent to tqdm(range(10)) which gives you an iteratable with progress bar.
+    #the above tqdm shows progress over epochs which is equal to 3 for glue script
+    
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
+        
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        #this internal tqdm progress bar is over the the examples in train dataset. The disable option will disable tqdm wrapper if either local_rank
+        #is -1 which means that we don't use DistributedDataParallel and local_rank 0 means that this is the master node (?) for DistributedDataParallel
+        
         for step, batch in enumerate(epoch_iterator):
+            
             model.train()
+            
+            # ** what is the functionality of train method of nn.Module?
+            #it puts the instance of nn.Module is train mode which only impacts certain field modules of this module like Dropout and BatchNorm.
+            #When DropOut module is put in train mode, it starts dropping the nodes with the dropout probabilities. However, I don't think so that
+            #train() and eval() methods have impact on LayerNorm.
+
+            #batch is a python list where contains the following tensors: all_input_ids, all_attention_mask, all_token_type_ids, all_labels
+            #all_input_ids, all_attention_masks, all_token_type_ids are tensors of size(8, 128) while all_lables is a tensor of size(8)
+            
             batch = tuple(t.to(args.device) for t in batch)
+
+            # ** why do we need to move the input tensors to args.device?
+            #it is because, we already moved all the parameters and gradient tensors of the model to args.device using model.to(args.device). Therefore,
+            #we need also to move the input tensors to the same device using to() method of tensor objects as above. args.device is equal to cpu for mac
+            #and cuda:0 for linux machine 
+            
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
                       'labels':         batch[3]}
+            
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+                #for bert mrpc, since model_type is 'bert', 'token_type_ids' will be added to the inputs dict
+                
             outputs = model(**inputs)
+            #I believe ** before inputs makes the python dict inputs to be passed to the model as named arguments.
+            
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            #loss will be a scalar tensor
 
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
+                #the above line is very interesting! in order to garuntee that the gradients are aggregated among different workers while multi-gpu
+                #training, it seems that it is required to compute mean of loss among different workers. 
+                
+
+            #gradient_accumulation_steps is equal to 1 for glue script
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
+            #args.fp16 is False for glue script
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
+                #nice! this is for bert mrpc. finally, we invoke backward method on loss which computes the graients with respect to the parameters of the
+                #model
                 loss.backward()
 
             tr_loss += loss.item()
+            #since loss is a scalar tensor, the item method returns the value of this tensor as python float object. 
+
+
+            # ** what is the objective of gradient_accumulation_steps?
+            #it is used if we don't want to update the weights of the model every batch but every few batch. In other words, we want to rely on
+            #gradient accumulation feature of torch, to accumulare gradients for gradient_accumulation_setps steps before updating the weights. 
+            
             if (step + 1) % args.gradient_accumulation_steps == 0:
-                if args.fp16:
+                
+                if args.fp16:#this is False for glue script
                     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
                 else:
+                    #max_grad_norm is equal to 1.0 for glue script
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
+                # ** what is the functionality of clip_grad_norm_?
+                #it takes the parameters of the model and access their computed gradients (note loss.backward() is already invoked) using p.grad.data
+                #where p is a parameter of the model. Then, it computes the norm 2 of the gradients using p.data.grad.norm(2). Finally, all the
+                #norm 2 of gradients being added after being squared. Finally, the square root of the sum is computed. If the total norm is less than 1.0,
+                #then the gradients are not being impacted. Otherwise, all the gradients are being scaled down so that the total gradient norm is equal to
+                #1.0. In summary, we compute the norm 2 of all the gradient tensors after being concatenated. 
+                    
                 optimizer.step()
+                #optimizer.step() updates the parameters of the model using the computed grqadients filled by loss.backward()
+                
                 scheduler.step()  # Update learning rate schedule
+                #updating the learning_rate
+                
                 model.zero_grad()
+                #make sure that grdient tensors are reset to zero.
+                
                 global_step += 1
 
+                #logging_steps is equal to 50
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
+
+                    #for glue script since we rely on DataParallel, local_rank is equal to -1
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
                         results = evaluate(args, model, tokenizer)
+                        #resuls will be a python dict of acc, f1 and f1_and_acc where acc is the fraction of test examples that are correctly predicted.
+                        #f1 is the f1 score is f1 score assuming binary classification where label 1 is the target label. f1_and_acc is the average
+                        #f1 and acc
+                        
                         for key, value in results.items():
                             tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
+                            #tb_writer is summary writer for tensorboard
+
+                            
                     tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                    
                     tb_writer.add_scalar('loss', (tr_loss - logging_loss)/args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
+                    #save_steps is 50
+                    
                     # Save model checkpoint
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
+                    #output_dir is results/MRPC
+                    
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
+                        
                     model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
+                    #save_pretrained is defined in modeling_utils.py and it is a method of PreTrainedModel class.
+                    #this method saves the model in a format that can be used by from_pretrained method of PreTrainedModel class to reload the model.
+                    
+                    
                     torch.save(args, os.path.join(output_dir, 'training_args.bin'))
                     logger.info("Saving model checkpoint to %s", output_dir)
 
@@ -230,37 +383,71 @@ def train(args, train_dataset, model, tokenizer):
 
 
 def evaluate(args, model, tokenizer, prefix=""):
+    
     # Loop to handle MNLI double evaluation (matched, mis-matched)
     eval_task_names = ("mnli", "mnli-mm") if args.task_name == "mnli" else (args.task_name,)
+    #for mrpc, task_name is mrpc
+    
     eval_outputs_dirs = (args.output_dir, args.output_dir + '-MM') if args.task_name == "mnli" else (args.output_dir,)
-
+    #for bert mrpc, eval_outputs_dirs will be results/mrpc
+    
     results = {}
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
+        #for mrpc, eval_task is mrpc and eval_output_dir is results/mrpc
+        
         eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
+        #in above eval_dataset will be TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels) where
+        #all_input_ids, all_attention_mask, all_token_type_ids are 2-dimensioanl tensors of size [num_test_sequence, 128] and
+        #all_lables is a one dimensional tensor of size [num_test_sequence]].
+        #TensorDataset is a standard torch dataset from torch.utils.data and each example is retrieved by indexing tensors along
+        #their first dimensions
 
+
+        #local_rank for DistributedParallel will be -1 in glue dataset
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
 
         args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        #n_gpu for linux machine is 2 and 0 for mac. Therefore, eval_batch_size will be equal to 16 for linux machine and 8 for mac 
+        
         # Note that DistributedSampler samples randomly
         eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
+        #if local_rank is -1, it means that we are not relying on DistributedDataParallel. Therefore, we have either no disributed traninig or a single
+        #machine multi gpu distributed training. If it is DistibutedDataParallel, for the evaluation dataset, dataloader, its sampler must be aware of the
+        #situation and distribute the examples of dataset among different machines. Therefore, we need an instance of DistributedSampler to be passed as
+        #sampler argument to DataLoader. However, if we don't rely on DistributedDataParallel, then for train dataset RandomSampler is good enough and
+        #for evaluation dataset, SequnentialSampler which is determenistic is perfect. The reason that here for DistributedDataParallel in the case
+        #of evaluation dataset, we still use DistributedSampler which is a random sampler and not deterministic, is that there is no a determnistic
+        #sampler like SequentialSampler for DistributedDataParallel
+        
         eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+        #as you can see eval dataloader is shuffle disabled
 
         # multi-gpu eval
         if args.n_gpu > 1:
             model = torch.nn.DataParallel(model)
+            #for linux n_gpu is 2 and model is already being passed once in the train method through torch.nn.DataParallel. Therefore, I think it is fine
+            #to pass an instacne of nn.Module several time through torch.nn.DataParallel
 
         # Eval!
         logger.info("***** Running evaluation {} *****".format(prefix))
         logger.info("  Num examples = %d", len(eval_dataset))
+        #lenth of eval dataloder will be equal to the number of sequences in test mrpc dataset.
+        
         logger.info("  Batch size = %d", args.eval_batch_size)
+        #eval_batch_size will be equal to 8 for mac and 16 for linux machine
+        
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
+            #model.eval() will put the DropOut and BatchNorm layers of the model in evaluation mode
+            
             batch = tuple(t.to(args.device) for t in batch)
+            #args.device is equal to 'cpu' for mac and 'cuda:0' for linux machine. Since the model's parameters and gradients tensors have already being
+            #transferred to args.device which is 'cuda:0' for linux machine, we need also to transfer the input tensors to the same device. 
 
             with torch.no_grad():
                 inputs = {'input_ids':      batch[0],
@@ -270,25 +457,54 @@ def evaluate(args, model, tokenizer, prefix=""):
                     inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
+                
+                #tmp_eval_loss will be the cross entropy loss for binary mrpc taks and it should be already a scalar tensor. However, for
+                #DistributedDataParallel, it might be a 1d tensor with the dimension being equal to the number of machines. Therefore, in below, before
+                #invoking item method, first, we invoke mean method.
 
                 eval_loss += tmp_eval_loss.mean().item()
+                
             nb_eval_steps += 1
+
+            #preds for the first batch will be None!
             if preds is None:
                 preds = logits.detach().cpu().numpy()
+                #the signficance of detach() method is that eventhough logits grad is True, for the graph that is constructed on top of logits.detach(), 
+                #gradients will not be tracked.
+                
                 out_label_ids = inputs['labels'].detach().cpu().numpy()
+
+                #in both above cases, cpu method is required in the case if these two tensors reside on gpus.
             else:
-                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0) #axis 0 here is across rows
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
+        #nb_eval_steps is the number of evaluation batch steps
+
+        #for bert mrpc, output_mode is classification. 
         if args.output_mode == "classification":
+            #preds will be a ndarray of shape(num_text_examples, 2)
             preds = np.argmax(preds, axis=1)
+            #axis 1 here is across column
+            #after above np.argmax, preds will be 1d array of size(num_test_examples)
+            
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
+
+        #both preds and out_label_ids are 1d np arrays of size(num_test_examples)
         result = compute_metrics(eval_task, preds, out_label_ids)
+        #compute_metrics is glue_compute_metrics which is defined at transformers/data/metrics/__ini__.py
+        #compute_metrics returns a python dict of acc, f1 and acc_and_f1 where acc is the fraction of examples that their labels are correctly predicted.
+        #f1 is the f1 score of treating this problem as a binary classification problem where the target lablel is 1 and acc_and_f1 is simply
+        #average of acc and f1
+
         results.update(result)
+        #both result and results are python dict where the items of result is used to update results dict. 
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
+        #eval_ouptput_dir is results/MRPC/
+        
         with open(output_eval_file, "w") as writer:
             logger.info("***** Eval results {} *****".format(prefix))
             for key in sorted(result.keys()):
@@ -559,6 +775,7 @@ def main():
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
     #what is the random seed for initilization?
+    #the above default seed will be used for glue script.
 
     parser.add_argument('--fp16', action='store_true',
                         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit")
@@ -767,6 +984,11 @@ def main():
         #their first dimensions
         
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
+        #tr_loss is the average loss over all the training steps and not the final loss
+        #the above train method, will save the model checkpoints in results/MRPC folder. Also, it writes the evaluation results in a txt file called
+        #eval_results.txt in the the folder results/MRPC with three different metrics: acc, f1 and acc_f1. Note that this eval_results.txt will be
+        #overwritten each time that we run the evaluation job.
+        
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
 
