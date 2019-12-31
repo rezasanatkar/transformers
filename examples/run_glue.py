@@ -984,7 +984,8 @@ def main():
         #their first dimensions
         
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-        #tr_loss is the average loss over all the training steps and not the final loss
+        #tr_loss is the average loss over all the training steps and not the final loss. In particualr, tr_loss is the average loss acorss all the
+        #minibatched of all epochs.
         #the above train method, will save the model checkpoints in results/MRPC folder. Also, it writes the evaluation results in a txt file called
         #eval_results.txt in the the folder results/MRPC with three different metrics: acc, f1 and acc_f1. Note that this eval_results.txt will be
         #overwritten each time that we run the evaluation job.
@@ -1003,33 +1004,59 @@ def main():
         # They can then be reloaded using `from_pretrained()`
         model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
         model_to_save.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
+        #save_pretrained is defined in modeling_utils.py and it is a method of PreTrainedModel class.
+        #this method saves the model in a format that can be used by from_pretrained method of PreTrainedModel class to reload the model.
 
+        #output_dir is results/MRPC
+        
+        tokenizer.save_pretrained(args.output_dir)
         # Good practice: save your training arguments together with the trained model
         torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
 
+        #In the below, we reload the model from the saved finetuend model in order to ensure that the evaluation has been performred on the save model
+        #to avoid any discrepency.
         # Load a trained model and vocabulary that you have fine-tuned
         model = model_class.from_pretrained(args.output_dir)
         tokenizer = tokenizer_class.from_pretrained(args.output_dir)
         model.to(args.device)
-
+        #args.device is cuda:0 for linux machine ans cpu for mac
 
     # Evaluation
     results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
+        #for glue script, do_eval is enabled.
+        
         tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         checkpoints = [args.output_dir]
+        #args.output_dir is results/MRPC
+        
+        #for glue script, eval_all_checkpoints is disabled
         if args.eval_all_checkpoints:
             checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
+            #WEIGHTS_NAME is equal to "pytorch_model.bin"
+            
             logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
+
+        
         for checkpoint in checkpoints:
             global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
+            #for glue script, since checkpoints is [results/MRPC], its len is equal to 1 and therefore, global_step will be equal to "".
+            #Note, torch records the checkpoints in the format of checkpoint-250 where 250 is the global step.
+            
             prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
+            #for glue script, prefix will be equal to ""
             
             model = model_class.from_pretrained(checkpoint)
+            #in above, checkpoint is equal to results/MRPC
+            
             model.to(args.device)
+            
             result = evaluate(args, model, tokenizer, prefix=prefix)
+            #resuls will be a python dict of acc, f1 and f1_and_acc where acc is the fraction of test examples that are correctly predicted.
+            #f1 is the f1 score is f1 score assuming binary classification where label 1 is the target label. f1_and_acc is the average
+            #f1 and acc
+
             result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
             results.update(result)
 
