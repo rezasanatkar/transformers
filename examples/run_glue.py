@@ -693,7 +693,10 @@ def main():
     parser.add_argument("--do_eval", action='store_true',
                         help="Whether to run eval on the dev set.")
     #do you want to run the evaluation over the dev dataset (not test dataset)?
-    
+
+    parser.add_argument("--feature_pyramid", action='store_true',
+                        help="Whether to use feature pyramid.")
+
     parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Rul evaluation during training at each logging step.")
     #this is the option that will be useful if you want to run evaluation job over dev dataset at each time that you save the checkpoint of the model being
@@ -894,7 +897,8 @@ def main():
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path,
                                           num_labels=num_labels,
                                           finetuning_task=args.task_name,
-                                          cache_dir=args.cache_dir if args.cache_dir else None)
+                                          cache_dir=args.cache_dir if args.cache_dir else None,
+                                          enable_feature_pyramid = args.feature_pyramid)
 
     #from_pretrained method will download the config json file if doesn't already exist in cache folder or if force_download is enabled. Then, after either
     #dowloading it from cloud or finding it in cache, it will create a config object using that json config file and return it.

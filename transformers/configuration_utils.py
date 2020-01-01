@@ -220,10 +220,9 @@ class PretrainedConfig(object):
         to_remove = []
         #here, we have the option to override the configuaration attributes of the config object using the kwargs passed to from_pretrained method.
         for key, value in kwargs.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
-                #overriding happens here
-                to_remove.append(key)
+            setattr(config, key, value)
+            #overriding happens here
+            to_remove.append(key)
 
         #in above in the case of bert-base-uncased being used for mrpc task, the only attribute of the config that is overriden is finetunning_taks that
         #is changed from null to mrpc

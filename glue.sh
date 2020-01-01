@@ -1,5 +1,5 @@
 export GLUE_DIR=glue_data
-export TASK_NAME=MRPC
+export TASK_NAME=MRPC_feature_pyramid
 
 python ./examples/run_glue.py \
     --model_type bert \
@@ -7,6 +7,7 @@ python ./examples/run_glue.py \
     --task_name $TASK_NAME \
     --do_train \
     --do_eval \
+    --feature_pyramid \
     --do_lower_case \
     --data_dir $GLUE_DIR/$TASK_NAME \
     --max_seq_length 128 \
