@@ -676,39 +676,6 @@ class Conv1D(nn.Module):
         x = x.view(*size_out)
         return x
 
-class FeaturePyramidPooler(nn.Module):
-    #BertPooler takes the output embedding of the last layer of the BERT model with the size of (batch_sise, seq_lenght, 768).
-    #then, it will slice the embedding of the first token of each sequence and applies 768 x 768 transformation to each embedding vector.
-    #finally, it applies a tanh fn to transformed vectors. 
-    
-    def __init__(self, config):
-        super(FeaturePyramidPooler, self).__init__()
-
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        #self.dense will be an 768 x 768 fully-connected layer. 
-        
-        self.activation = nn.Tanh()
-
-    def forward(self, all_hidden_states):
-        #hidden_states is the ouput of the last BERT layer of the BERT model. Therefore, it will be a tensor of size(batch_siz, seq_lenght, 768)
-
-        # We "pool" the model by simply taking the hidden state corresponding
-        # to the first token.
-        
-        first_token_tensor = all_hidden_states[12][:, 0]
-        #hidden_states is a tensor of size(batch_size, seq_lenght, 768) and first_token_tensor will be size of (batch_size, 768) where it will contain
-        #only the emebedding of the first token of each sequnece
-        
-        pooled_output = self.dense(first_token_tensor)
-        #first_token_tensor is a tensor of size(batch_size, 768) and pooled_output wil be also a tensor of size(batch_size, 768). Multiplication
-        #of the 2 dimensioanl first_token_tensor by self.dense fully-conencted layer, will tranform each embedding row vector of size (1, 768)
-        #to a new row vector of size(1, 768). Note that the embeddings of differnet tokens are not being mixed. 
-        
-        pooled_output = self.activation(pooled_output)
-        #pooled_output will be the result of tanh transformation. But, I don't know what is the point of applying tanh here. 
-        
-        return pooled_output
-
 class PoolerStartLogits(nn.Module):
     """ Compute SQuAD start_logits from sequence hidden states. """
     def __init__(self, config):

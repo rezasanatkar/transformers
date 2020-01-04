@@ -1,5 +1,6 @@
 export GLUE_DIR=glue_data
-export TASK_NAME=MRPC_feature_pyramid
+export TASK_NAME=QQP
+export POOLER=FEATURE_PYRAMID
 
 python ./examples/run_glue.py \
     --model_type bert \
@@ -16,4 +17,4 @@ python ./examples/run_glue.py \
     --learning_rate 2e-5 \
     --num_train_epochs 3.0 \
     --overwrite_output_dir \
-    --output_dir results/$TASK_NAME/
+    --output_dir results/$TASK_NAME$POOLER/
