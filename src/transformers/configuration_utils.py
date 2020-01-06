@@ -218,9 +218,8 @@ class PretrainedConfig(object):
         # Update config with kwargs if needed
         to_remove = []
         for key, value in kwargs.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
-                to_remove.append(key)
+            setattr(config, key, value)
+            to_remove.append(key)
         for key in to_remove:
             kwargs.pop(key, None)
 
