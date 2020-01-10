@@ -446,7 +446,7 @@ class T5Block(nn.Module):
 
 class T5PreTrainedModel(PreTrainedModel):
     """ An abstract class to handle weights initialization and
-        a simple interface for dowloading and loading pretrained models.
+        a simple interface for downloading and loading pretrained models.
     """
 
     config_class = T5Config
@@ -905,7 +905,7 @@ class T5WithLMHeadModel(T5PreTrainedModel):
         if lm_labels is not None:
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = lm_labels[..., 1:].contiguous()
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
             decoder_outputs = (
                 loss,

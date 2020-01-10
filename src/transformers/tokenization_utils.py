@@ -39,7 +39,7 @@ TOKENIZER_CONFIG_FILE = "tokenizer_config.json"
 
 class PreTrainedTokenizer(object):
     """ Base class for all tokenizers.
-    Handle all the shared methods for tokenization and special tokens as well as methods dowloading/caching/loading pretrained tokenizers as well as adding tokens to the vocabulary.
+    Handle all the shared methods for tokenization and special tokens as well as methods downloading/caching/loading pretrained tokenizers as well as adding tokens to the vocabulary.
 
     This class also contain the added tokens in a unified way on top of all tokenizers so we don't have to handle the specific vocabulary augmentation methods of the various underlying dictionary structures (BPE, sentencepiece...).
 
@@ -460,7 +460,7 @@ class PreTrainedTokenizer(object):
         try:
             tokenizer = cls(*init_inputs, **init_kwargs)
         except OSError:
-            OSError(
+            raise OSError(
                 "Unable to load vocabulary from file. "
                 "Please check that the provided vocabulary is accessible and not corrupted."
             )
@@ -1511,14 +1511,16 @@ class PreTrainedTokenizerFast(PreTrainedTokenizer):
         # Prepare inputs as tensors if asked
         if return_tensors == "tf" and is_tf_available():
             encoding_dict["input_ids"] = tf.constant([encoding_dict["input_ids"]])
-            encoding_dict["token_type_ids"] = tf.constant([encoding_dict["token_type_ids"]])
+            if "token_type_ids" in encoding_dict:
+                encoding_dict["token_type_ids"] = tf.constant([encoding_dict["token_type_ids"]])
 
             if "attention_mask" in encoding_dict:
                 encoding_dict["attention_mask"] = tf.constant([encoding_dict["attention_mask"]])
 
         elif return_tensors == "pt" and is_torch_available():
             encoding_dict["input_ids"] = torch.tensor([encoding_dict["input_ids"]])
-            encoding_dict["token_type_ids"] = torch.tensor([encoding_dict["token_type_ids"]])
+            if "token_type_ids" in encoding_dict:
+                encoding_dict["token_type_ids"] = torch.tensor([encoding_dict["token_type_ids"]])
 
             if "attention_mask" in encoding_dict:
                 encoding_dict["attention_mask"] = torch.tensor([encoding_dict["attention_mask"]])
