@@ -504,7 +504,7 @@ class BertEncoder(nn.Module):
     def __init__(self, config):
         super(BertEncoder, self).__init__()
         self.output_attentions = config.output_attentions
-        self.output_hidden_states = config.output_hidden_states or config.enable_feature_pyramid
+        self.output_hidden_states = config.output_hidden_states or config.enable_average_pooler
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(
@@ -555,9 +555,9 @@ class BertPooler(nn.Module):
         pooled_output = self.activation(pooled_output)
         return pooled_output
 
-class FeaturePyramidPooler(nn.Module):
+class AveragePooler(nn.Module):
     def __init__(self, config):
-        super(FeaturePyramidPooler, self).__init__()
+        super(AveragePooler, self).__init__()
         self.config = config
         self.bert_layer = BertLayerAverage(config)
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -777,10 +777,10 @@ class BertModel(BertPreTrainedModel):
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
 
-        if config.enable_feature_pyramid:
-            self.pooler_feature_pyramid = FeaturePyramidPooler(config)
+        if config.enable_average_pooler:
+            self.pooler = AveragePooler(config)
         else:
-            self.pooler_feature_pyramid = BertPooler(config)
+            self.pooler = BertPooler(config)
 
         self.init_weights()
 
@@ -929,12 +929,12 @@ class BertModel(BertPreTrainedModel):
             encoder_attention_mask=encoder_extended_attention_mask,
         )
 
-        if self.config.enable_feature_pyramid:
+        if self.config.enable_average_pooler:
             sequence_output = encoder_outputs[1]
-            pooled_output = self.pooler_feature_pyramid(sequence_output, attention_mask = attention_mask)
+            pooled_output = self.pooler(sequence_output, attention_mask = attention_mask)
         else:
             sequence_output = encoder_outputs[0]
-            pooled_output = self.pooler_feature_pyramid(sequence_output)
+            pooled_output = self.pooler(sequence_output)
 
 
         outputs = (sequence_output, pooled_output,) + encoder_outputs[

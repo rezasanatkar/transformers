@@ -479,7 +479,7 @@ def main():
     )
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.")
-    parser.add_argument("--feature_pyramid", action='store_true', help="Whether to use feature pyramid.")
+    parser.add_argument("--average_pooler", action='store_true', help="Whether to use average pooler or not.")
     parser.add_argument(
         "--evaluate_during_training", action="store_true", help="Rul evaluation during training at each logging step.",
     )
@@ -617,7 +617,7 @@ def main():
         num_labels=num_labels,
         finetuning_task=args.task_name,
         cache_dir=args.cache_dir if args.cache_dir else None,
-        enable_feature_pyramid = args.feature_pyramid,
+        enable_average_pooler = args.average_pooler,
     )
     tokenizer = tokenizer_class.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
